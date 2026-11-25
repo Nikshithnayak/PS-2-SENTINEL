@@ -10,6 +10,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from engine.baseline import fit_personal_baselines
+from engine.datasets.loaders import DATASET_CATALOG
+from engine.detectors import evaluate_patient_window
+from engine.eval_harness import run_benchmark
+from engine.features import aggregate_hourly_timeline, normalize_samples, parse_exclusions
 from sim.generator import SCENARIO_CATALOG, ScenarioName, generate_scenario
 
 CONTRACTS_PATH = Path(__file__).resolve().parents[3] / "packages" / "shared" / "contracts" / "sentinel-contracts.json"
@@ -90,3 +95,63 @@ async def generate_sim_endpoint(req: SimGenerateRequest) -> dict[str, Any]:
         "sampleCount": len(res.samples),
         "samples": res.samples,
     }
+
+
+class EngineEvaluateRequest(BaseModel):
+    patientId: str = Field(min_length=1)
+    samples: list[dict[str, Any]]
+    conditions: list[str] = Field(default_factory=lambda: ["general_frailty"])
+    age: int | None = Field(default=72, ge=1, le=120)
+    exclusions: list[dict[str, Any]] = Field(default_factory=list)
+    environment: dict[str, Any] | None = None
+    referenceNow: str | None = None
+
+
+class BenchmarkRequest(BaseModel):
+    seeds: list[int] = Field(default_factory=lambda: [42, 43])
+    totalDays: int = Field(default=18, ge=10, le=30)
+    includeAblations: bool = True
+
+
+@app.post("/v1/baseline/fit")
+async def fit_baseline_endpoint(req: EngineEvaluateRequest) -> dict[str, Any]:
+    samples = normalize_samples(req.samples)
+    spans = parse_exclusions(req.exclusions)
+    buckets = aggregate_hourly_timeline(samples, spans)
+    model = fit_personal_baselines(
+        patient_id=req.patientId,
+        buckets=buckets,
+        conditions=req.conditions,
+        age=req.age,
+    )
+    return model.to_dict()
+
+
+@app.post("/v1/score/evaluate")
+async def evaluate_score_endpoint(req: EngineEvaluateRequest) -> dict[str, Any]:
+    from engine.features import parse_utc
+
+    ref_dt = parse_utc(req.referenceNow) if req.referenceNow else None
+    return evaluate_patient_window(
+        patient_id=req.patientId,
+        raw_samples=req.samples,
+        conditions=req.conditions,
+        age=req.age,
+        exclusions=req.exclusions,
+        environment=req.environment,
+        reference_now=ref_dt,
+    )
+
+
+@app.post("/v1/eval/benchmark")
+async def benchmark_endpoint(req: BenchmarkRequest) -> dict[str, Any]:
+    return run_benchmark(
+        seeds=req.seeds,
+        total_days=req.totalDays,
+        include_ablations=req.includeAblations,
+    )
+
+
+@app.get("/v1/datasets")
+async def list_datasets_endpoint() -> dict[str, Any]:
+    return {"datasets": DATASET_CATALOG}

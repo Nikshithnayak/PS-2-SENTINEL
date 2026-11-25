@@ -1,7 +1,7 @@
 # Project State — SENTINEL
 
-> **Last Updated:** 2026-11-25T23:04+05:30  
-> **Active Phase:** Phase 2 Complete -> Entering **Phase 3: Detection Engine**  
+> **Last Updated:** 2026-11-25T23:21+05:30  
+> **Active Phase:** Phase 3 Complete -> Entering **Phase 4: Alerting & Escalation**  
 > **Overall Status:** `ON_TRACK`
 
 ---
@@ -9,9 +9,11 @@
 ## Completed Phases
 - [x] **Phase 0: Understand** — Repo digest, domain research, 6-persona self-interview, gstack pressure-test, GSD docs committed (`6870845`).
 - [x] **Phase 1: Foundations** — Monorepo, `DESIGN.md` + Tailwind v4 tokens, PostgreSQL partitioned schema + `FORCE RLS` + append-only SHA-256 audit chain + `embedded-postgres` dev parity + Better Auth RBAC + Consent/Care-Circle APIs + Playwright/axe verification (`f2e85a8`).
-- [x] **Phase 2: Data Layer** — `ProviderAdapter` interface (`OpenWearablesAdapter`, `GoogleHealthAdapter`), authenticated Open Ingestion API (`/api/v1/ingest`, `/api/v1/api-keys`), streaming Apple Health `export.xml` importer, CSV column mapper & Takeout JSON importer, data quality pipeline (UTC, canonical units, bounds, motion-artifact discounting, `device_silent`), Open-Meteo non-PII environmental context, 11 seeded physiological simulator scenarios (`services/engine/sim/`), `/ingest` UI with `SYNTHETIC` badging, Vitest + pytest + Playwright/axe verification.
+- [x] **Phase 2: Data Layer** — `ProviderAdapter`, authenticated `/api/v1/ingest`, streaming XML/CSV/Takeout importers, data quality & silence monitor, Open-Meteo context, 11 seeded physiological scenarios, Playwright/axe verification (`85cc460`).
+- [x] **Phase 3: Detection Engine** — Contamination-quarantined personal baseline with 14-day shrinkage, L1 safety + L2 robust z/EWMA/CUSUM/`ruptures` + L3 `MinCovDet` Mahalanobis/`HalfSpaceTrees`/`IsolationForest`, partial NEWS2, confounder suppression, causal ablation harness, UTF-8 Windows `embedded-postgres` self-healing, FastAPI + Next.js bridge verified (`9/9` pytest, `8/8` Vitest, `3/3` Playwright/axe).
 
-## Next Immediate Actions (Phase 3: Detection Engine)
-1. Author `.planning/phases/03-engine/PLAN.md` and `services/engine/engine/` modules (`features.py`, `baseline.py`, `detectors.py`, `conditions.py`, `eval_harness.py`, `datasets/loaders.py`).
-2. Expose FastAPI detection & benchmark endpoints (`/v1/baseline/fit`, `/v1/score/evaluate`, `/v1/eval/benchmark`) and wire Next.js `/api/v1/engine/evaluate` and `/api/v1/exclusions` persisting to `baseline_states`, `risk_assessments`, and `detector_decision_logs`.
-3. Verify with `pytest`, Hypothesis property-based tests, golden clinical scenario tests, baseline ablation benchmarks (L1/L2/L3 vs fixed thresholds), and Playwright + E2E check.
+## Next Immediate Actions (Phase 4: Alerting & Escalation)
+1. Author `.planning/phases/04-alerting/PLAN.md`.
+2. Build anti-fatigue policy engine (N-of-M persistence, hysteresis, cooldowns, daily budget, quiet hours with Urgent bypass, deduplication) and bounded Ack/Snooze/False-Alarm feedback sensitivity adjustment.
+3. Build timed escalation ladder (Patient Nudge -> Primary Caregiver -> Secondary Caregiver -> Clinician -> Emergency `112`/`108` + OpenStreetMap Overpass/Nominatim nearest hospital lookup).
+4. Implement PostgreSQL transactional outbox + worker (`alert_deliveries`), SSE real-time stream (`/api/v1/stream`), Web Push VAPID adapter, Email SMTP/local inbox preview, Telegram adapter, `ntfy` adapter, flag-gated SMS adapter, and Phase 4 tests/E2E.

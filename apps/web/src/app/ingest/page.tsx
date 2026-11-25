@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
   ArrowLeft,
+  BrainCircuit,
   CloudSun,
   FileSpreadsheet,
   FileUp,
@@ -66,6 +67,34 @@ interface ApiKeyRow {
   createdAt: string;
 }
 
+interface EnginePreviewResult {
+  deteriorationIndex: number;
+  level: string;
+  engineSource: string;
+  isSynthetic: boolean;
+  l1Score: number;
+  l2Score: number;
+  l3Score: number;
+  summaryText: string;
+  baseline: {
+    stage: string;
+    validDays: number;
+    statusLabel: string;
+  };
+  partialNews2: {
+    partialScore: number;
+    scoredParameterCount: number;
+    totalNews2Parameters: number;
+    spo2Scale: number;
+  };
+  contributions: Array<{
+    metricType: string;
+    label: string;
+    message: string;
+    sharePct: number;
+  }>;
+}
+
 export default function IngestPage() {
   const qc = useQueryClient();
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -87,6 +116,28 @@ export default function IngestPage() {
 
   // Synthetic sim state
   const [scenario, setScenario] = useState('early_infection');
+  const [enginePreview, setEnginePreview] = useState<EnginePreviewResult | null>(null);
+
+  const engineEvalMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/v1/engine/evaluate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? 'Engine evaluation failed');
+      return body as EnginePreviewResult;
+    },
+    onSuccess: (data) => {
+      setErrorMsg(null);
+      setEnginePreview(data);
+      setStatusMsg(
+        `Engine evaluated: Deterioration Index ${data.deteriorationIndex} (${data.level}) via ${data.engineSource}.`,
+      );
+    },
+    onError: (err) => setErrorMsg(err instanceof Error ? err.message : 'Engine run failed'),
+  });
 
   const qualityQuery = useQuery<QualityStatusResponse>({
     queryKey: ['quality-status'],
@@ -582,6 +633,87 @@ export default function IngestPage() {
                 </div>
               </section>
             </div>
+
+            <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <BrainCircuit className="h-5 w-5 text-[var(--brand-primary)]" aria-hidden="true" />
+                  <h2 className="text-lg font-semibold">3-Layer Detection Engine Preview</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => engineEvalMutation.mutate()}
+                  disabled={engineEvalMutation.isPending}
+                  className="min-h-11 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--brand-primary-fg)] cursor-pointer"
+                >
+                  {engineEvalMutation.isPending ? 'Evaluating...' : 'Run Detection Engine'}
+                </button>
+              </div>
+              {enginePreview ? (
+                <div className="mt-4 space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3">
+                      <span className="text-xs text-[var(--text-muted)]">Deterioration Index</span>
+                      <p
+                        data-testid="deterioration-index-value"
+                        className="mt-1 font-[family-name:var(--font-mono)] text-2xl font-bold tabular-nums"
+                      >
+                        {enginePreview.deteriorationIndex}
+                      </p>
+                      <span className="text-xs font-semibold uppercase text-[var(--status-watch)]">
+                        {enginePreview.level}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3">
+                      <span className="text-xs text-[var(--text-muted)]">Personal Baseline</span>
+                      <p className="mt-1 text-sm font-semibold">{enginePreview.baseline.stage}</p>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {enginePreview.baseline.statusLabel}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3">
+                      <span className="text-xs text-[var(--text-muted)]">Layer Scores (L1/L2/L3)</span>
+                      <p className="mt-1 font-[family-name:var(--font-mono)] text-sm font-semibold tabular-nums">
+                        {enginePreview.l1Score} / {enginePreview.l2Score} / {enginePreview.l3Score}
+                      </p>
+                      <span
+                        data-testid="engine-source-tag"
+                        className="font-[family-name:var(--font-mono)] text-xs text-[var(--text-muted)]"
+                      >
+                        {enginePreview.engineSource}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3">
+                      <span className="text-xs text-[var(--text-muted)]">Partial NEWS2 (Subset)</span>
+                      <p className="mt-1 font-[family-name:var(--font-mono)] text-lg font-semibold tabular-nums">
+                        {enginePreview.partialNews2.partialScore} pts
+                      </p>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {enginePreview.partialNews2.scoredParameterCount}/
+                        {enginePreview.partialNews2.totalNews2Parameters} params (Scale{' '}
+                        {enginePreview.partialNews2.spo2Scale})
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium">{enginePreview.summaryText}</p>
+                  <ul className="space-y-1.5 text-xs text-[var(--text-muted)]">
+                    {enginePreview.contributions.slice(0, 4).map((c) => (
+                      <li key={c.metricType} className="flex flex-wrap justify-between gap-2">
+                        <span>{c.message}</span>
+                        <span className="font-[family-name:var(--font-mono)] tabular-nums">
+                          {c.sharePct}% share
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-[var(--text-muted)]">
+                  Click &quot;Run Detection Engine&quot; after loading data to fit the personal
+                  baseline and compute deterministic L1 + L2 + L3 deterioration scoring.
+                </p>
+              )}
+            </section>
 
             <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
               <h2 className="text-lg font-semibold">Recent Ingestion Batches (Provenance Ledger)</h2>

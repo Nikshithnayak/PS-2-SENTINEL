@@ -57,6 +57,7 @@ export async function ensurePostgresRunning(preferredPort = 5433): Promise<Local
     password: 'sentinel',
     port: preferredPort,
     persistent: true,
+    initdbFlags: ['--encoding=UTF8', '--no-locale'],
     onLog: () => {},
     onError: (err: unknown) => {
       console.error('[embedded-postgres]', err);
@@ -68,16 +69,26 @@ export async function ensurePostgresRunning(preferredPort = 5433): Promise<Local
   });
   await pgServer.start();
 
-  // Ensure database `sentinel` exists
+  // Ensure database `sentinel` exists with UTF8 encoding (critical for Kannada/Hindi on Windows)
   const adminClient = new Client({
     connectionString: `postgres://sentinel:sentinel@127.0.0.1:${preferredPort}/postgres`,
   });
   await adminClient.connect();
-  const dbExists = await adminClient.query(
-    "SELECT 1 FROM pg_database WHERE datname = 'sentinel'",
+  const dbExists = await adminClient.query<{ enc: string }>(
+    "SELECT pg_encoding_to_char(encoding) AS enc FROM pg_database WHERE datname = 'sentinel'",
   );
   if (dbExists.rowCount === 0) {
-    await adminClient.query('CREATE DATABASE sentinel');
+    await adminClient.query(
+      "CREATE DATABASE sentinel WITH TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'",
+    );
+  } else if (dbExists.rows[0]?.enc !== 'UTF8') {
+    await adminClient.query(
+      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'sentinel' AND pid <> pg_backend_pid()",
+    );
+    await adminClient.query('DROP DATABASE sentinel');
+    await adminClient.query(
+      "CREATE DATABASE sentinel WITH TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'",
+    );
   }
   await adminClient.end();
 
