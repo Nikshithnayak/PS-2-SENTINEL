@@ -45,7 +45,14 @@ export default async function HomePage() {
               </p>
             </div>
           </div>
-          <nav aria-label="Primary navigation" className="flex items-center gap-3">
+          <nav aria-label="Primary navigation" className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <Link
+              href="/ingest"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+            >
+              <Database className="h-4 w-4" aria-hidden="true" />
+              <span>Data & Import</span>
+            </Link>
             <Link
               href="/design"
               className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"

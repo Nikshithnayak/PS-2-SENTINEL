@@ -1,0 +1,5 @@
+<HealthData>
+        <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Apple Watch Series 10" unit="bpm" startDate="2026-11-25 06:15:00 +0530" endDate="2026-11-25 06:16:00 +0530" value="67"/>
+        <Record type="HKQuantityTypeIdentifierOxygenSaturation" sourceName="Apple Watch Series 10" unit="%" startDate="2026-11-25 06:20:00 +0530" endDate="2026-11-25 06:21:00 +0530" value="0.97"/>
+        <Record type="HKQuantityTypeIdentifierRespiratoryRate" sourceName="Apple Watch Series 10" unit="count/min" startDate="2026-11-25 06:25:00 +0530" endDate="2026-11-25 06:26:00 +0530" value="15"/>
+      </HealthData>

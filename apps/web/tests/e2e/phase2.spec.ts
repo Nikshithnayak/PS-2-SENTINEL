@@ -1,0 +1,68 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import AxeBuilder from '@axe-core/playwright';
+import { expect, test } from '@playwright/test';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const EVIDENCE_DIR = resolve(__dirname, '../../../../docs/evidence/phase-2');
+mkdirSync(EVIDENCE_DIR, { recursive: true });
+
+test.describe('Phase 2 Data Ingestion & Quality Pipeline E2E', () => {
+  test('imports Apple Health XML, generates API key, triggers Synthetic mode with badge', async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+    page.on('pageerror', (err) => pageErrors.push(err.message));
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/auth');
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await page.waitForURL('**/settings/consent');
+
+    await page.goto('/ingest');
+    await expect(page.getByText('Wearable Data Ingestion & Quality Pipeline')).toBeVisible();
+
+    // Generate device API key
+    await page.getByRole('button', { name: 'Generate Key' }).click();
+    await expect(page.getByText(/Copy now \(shown once\):/)).toBeVisible();
+
+    // Upload real Apple Health XML fixture
+    const fixturePath = resolve(EVIDENCE_DIR, 'sample-export.xml');
+    writeFileSync(
+      fixturePath,
+      `<HealthData>
+        <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Apple Watch Series 10" unit="bpm" startDate="2026-11-25 06:15:00 +0530" endDate="2026-11-25 06:16:00 +0530" value="67"/>
+        <Record type="HKQuantityTypeIdentifierOxygenSaturation" sourceName="Apple Watch Series 10" unit="%" startDate="2026-11-25 06:20:00 +0530" endDate="2026-11-25 06:21:00 +0530" value="0.97"/>
+        <Record type="HKQuantityTypeIdentifierRespiratoryRate" sourceName="Apple Watch Series 10" unit="count/min" startDate="2026-11-25 06:25:00 +0530" endDate="2026-11-25 06:26:00 +0530" value="15"/>
+      </HealthData>`,
+      'utf8',
+    );
+    await page.locator('#apple-xml-input').setInputFiles(fixturePath);
+    await expect(page.getByText(/Apple Health XML imported: 3 samples persisted/i)).toBeVisible();
+    await expect(page.getByText('apple_health_xml').first()).toBeVisible();
+
+    // Trigger Synthetic scenario and verify SYNTHETIC badge renders prominently
+    await page.getByRole('button', { name: 'Generate Synthetic Series' }).click();
+    await expect(page.getByText(/SYNTHETIC scenario "early_infection" ingested/i)).toBeVisible();
+    await expect(page.getByText('SYNTHETIC', { exact: true }).first()).toBeVisible();
+
+    await page.screenshot({ path: resolve(EVIDENCE_DIR, 'ingest-desktop.png'), fullPage: true });
+
+    const axeRes = await new AxeBuilder({ page }).analyze();
+    const serious = axeRes.violations.filter(
+      (v) => v.impact === 'serious' || v.impact === 'critical',
+    );
+    expect(serious).toEqual([]);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.screenshot({ path: resolve(EVIDENCE_DIR, 'ingest-mobile.png'), fullPage: true });
+
+    expect(consoleErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+});
