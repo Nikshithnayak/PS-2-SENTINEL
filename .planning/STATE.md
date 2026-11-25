@@ -1,21 +1,19 @@
 # Project State — SENTINEL
 
-> **Last Updated:** 2026-11-26T00:12+05:30  
-> **Active Phase:** Phase 7 Complete -> Entering **Phase 8: Evaluation Lab, Model Card & Clinical Exports**  
+> **Last Updated:** 2026-11-26T00:21+05:30  
+> **Active Phase:** Phase 8 Complete -> Entering **Phase 9: Hardening, Load Testing, Docs & Delivery**  
 > **Overall Status:** `ON_TRACK`
 
 ---
 
 ## Completed Phases
-- [x] **Phase 0–6:** Foundations, Data Layer, Detection Engine, Alerting/Escalation, Dashboards, Signature Visuals/i18n/PWA (`f2e85a8`..`541bbc4`).
-- [x] **Phase 7: Voice Check-In, Inbox Worker, Telegram & Medications** — Multilingual EN/KN/HI Voice Check-In Companion + barge-in TTS + `OPEN_LLM_VTUBER_WS` optional bridge, `workers/inbox` Cloudflare Email Routing worker + `/api/v1/webhooks/inbox-reply` + `/api/v1/webhooks/telegram`, NLM RxNorm non-PII drug lookup & dose adherence overlay (`15/15` Vitest, `1/1` inbox worker, `7/7` Playwright/axe).
+- [x] **Phase 0–7:** Understand, Foundations, Ingestion, Engine, Alerting, Dashboards, Experience/i18n/PWA, Voice/Inbox/Telegram/Meds (`6870845`..`7c83080`).
+- [x] **Phase 8: Evaluation Lab, Model Card & Exports** — Live causal ablation benchmark (`/eval`), honest Model Card (`/model-card`, `docs/MODEL-CARD.md`), printable Clinical Report (`/clinician/report`), FHIR R4 LOINC Bundle (`/api/v1/export/fhir`), de-identified research cohort export (`/api/v1/export/cohort-deidentified`), `17/17` Vitest & `8/8` Playwright/axe.
 
-## Next Immediate Actions (Phase 8: Evaluation Lab, Model Card & Exports)
-1. Author `.planning/phases/08-evaluation-exports/PLAN.md`.
-2. Build **In-App Evaluation Lab (`/eval`)**: interactive causal benchmark runner calling `POST /api/v1/engine/benchmark` (showing `fixed_clinical_only` vs `L1_L2_personal` vs `L1_L2_L3_full` Sensitivity, Specificity, PPV, False Alerts / Patient-Week, Median Hours After Onset, all 11 scenario pass/fail outcomes, and PMData/LifeSnaps/WESAD/MMASH public dataset schema adapter report).
-3. Build **Honest Model Card (`/model-card` + `docs/MODEL-CARD.md`)**: model architecture, intended non-diagnostic use, known limitations (dark-skin PPG attenuation, motion artifacts, missing ACVPU/O2/cuff-BP in partial NEWS2), subgroup considerations, calibration guarantees, and live link from `/clinician` & `/eval`.
-4. Build **Clinician Exports (`/api/v1/export/fhir`, `/api/v1/export/clinician-report`, `/api/v1/export/cohort-deidentified`)**:
-   - Real FHIR R4 `Bundle` conforming strictly to `@medplum/fhirtypes` (`Patient`, vital `Observation`s, `Flag` deterioration alerts, de-identified or consented).
-   - Printable Clinician Summary HTML/PDF-ready report view & downloadable JSON/printable artifact (`window.print()` clean `@media print` stylesheet + server-generated report endpoint).
-   - Org Admin / Researcher de-identified cohort dataset export (strictly stripped PII + rotated pseudonymous `studyId` + `clinician_export` consent / `org_admin` guard).
-5. Verify via Vitest (`phase8-exports.test.ts` validating `@medplum/fhirtypes` schema structure & PII stripping in de-identified cohort export) + Playwright + axe E2E (`phase8.spec.ts` testing live `/eval` benchmark run, `/model-card`, FHIR R4 download, and Clinician Summary render with screenshots in `docs/evidence/phase-8/`).
+## Next Immediate Actions (Phase 9: Hardening, Load Testing, Docs & Delivery)
+1. Author `.planning/phases/09-hardening/PLAN.md`.
+2. Polish minor display nits noted during Phase 8 inspection (wait for patient hydration in `phase8.spec.ts` report screenshot + replace literal backtick spans on `/model-card`).
+3. Create **k6 / Node Load Test** (`scripts/load-test.mjs` + `scripts/load-test.k6.js`) measuring real ingestion & health throughput against live local server and record exact measured latency/RPS!
+4. Verify OWASP ASVS Level 2 & India DPDP Act 2023 security checklist (`apps/web/tests/unit/phase9-security.test.ts`).
+5. Author comprehensive honest final documentation (`README.md`, `docs/ARCHITECTURE.md` with Mermaid C4 + schema + sequence + STRIDE + RADIO frontend doc, `docs/PITCH.md` 3-minute demo script, update `docs/SETUP-NEEDED.md` & `CREDITS.md` if needed).
+6. Execute final full clean regression run (`pnpm typecheck`, `pnpm --filter @sentinel/shared test`, `pnpm --filter @sentinel/inbox-worker test`, `pnpm --filter @sentinel/web test`, Python `uv run pytest -v`, `pnpm --filter @sentinel/web build`, `pnpm --filter @sentinel/web test:e2e`, plus load test & security audit), capture final Phase 9 verification screenshots in `docs/evidence/phase-9/`, commit cleanly, and report final verified results!

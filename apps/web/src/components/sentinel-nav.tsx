@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity,
+  BarChart3,
   BellRing,
   Database,
   FlaskConical,
@@ -21,6 +22,7 @@ const NAV_LINKS = [
   { href: '/clinician', label: 'Clinician', icon: Stethoscope },
   { href: '/signals', label: 'Signals', icon: LineChart },
   { href: '/alerts', label: 'Alerts', icon: BellRing },
+  { href: '/eval', label: 'Eval Lab', icon: BarChart3 },
   { href: '/ingest', label: 'Import', icon: Database },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];

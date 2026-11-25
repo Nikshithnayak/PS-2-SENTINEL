@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Lock, Stethoscope, Users } from 'lucide-react';
+import { Lock, Printer, Stethoscope, Users } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
 import { SentinelNav } from '@/components/sentinel-nav';
 
@@ -132,6 +132,15 @@ export default function ClinicianDashboardPage() {
       <SentinelNav
         title="Clinician Triage & Deep-Dive"
         isSynthetic={overviewQuery.data?.isSynthetic}
+        rightSlot={
+          <Link
+            href="/clinician/report"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] px-3 text-xs font-semibold hover:bg-[var(--bg-elevated)]"
+          >
+            <Printer className="h-4 w-4" aria-hidden="true" />
+            <span>PDF / FHIR</span>
+          </Link>
+        }
       />
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
