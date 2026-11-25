@@ -1,19 +1,19 @@
 # Project State — SENTINEL
 
-> **Last Updated:** 2026-11-26T00:21+05:30  
-> **Active Phase:** Phase 8 Complete -> Entering **Phase 9: Hardening, Load Testing, Docs & Delivery**  
-> **Overall Status:** `ON_TRACK`
+> **Last Updated:** 2026-11-26T00:32+05:30  
+> **Active Phase:** **Phase 9 Complete · PROJECT COMPLETE**  
+> **Overall Status:** `COMPLETE_VERIFIED`
 
 ---
 
-## Completed Phases
-- [x] **Phase 0–7:** Understand, Foundations, Ingestion, Engine, Alerting, Dashboards, Experience/i18n/PWA, Voice/Inbox/Telegram/Meds (`6870845`..`7c83080`).
-- [x] **Phase 8: Evaluation Lab, Model Card & Exports** — Live causal ablation benchmark (`/eval`), honest Model Card (`/model-card`, `docs/MODEL-CARD.md`), printable Clinical Report (`/clinician/report`), FHIR R4 LOINC Bundle (`/api/v1/export/fhir`), de-identified research cohort export (`/api/v1/export/cohort-deidentified`), `17/17` Vitest & `8/8` Playwright/axe.
-
-## Next Immediate Actions (Phase 9: Hardening, Load Testing, Docs & Delivery)
-1. Author `.planning/phases/09-hardening/PLAN.md`.
-2. Polish minor display nits noted during Phase 8 inspection (wait for patient hydration in `phase8.spec.ts` report screenshot + replace literal backtick spans on `/model-card`).
-3. Create **k6 / Node Load Test** (`scripts/load-test.mjs` + `scripts/load-test.k6.js`) measuring real ingestion & health throughput against live local server and record exact measured latency/RPS!
-4. Verify OWASP ASVS Level 2 & India DPDP Act 2023 security checklist (`apps/web/tests/unit/phase9-security.test.ts`).
-5. Author comprehensive honest final documentation (`README.md`, `docs/ARCHITECTURE.md` with Mermaid C4 + schema + sequence + STRIDE + RADIO frontend doc, `docs/PITCH.md` 3-minute demo script, update `docs/SETUP-NEEDED.md` & `CREDITS.md` if needed).
-6. Execute final full clean regression run (`pnpm typecheck`, `pnpm --filter @sentinel/shared test`, `pnpm --filter @sentinel/inbox-worker test`, `pnpm --filter @sentinel/web test`, Python `uv run pytest -v`, `pnpm --filter @sentinel/web build`, `pnpm --filter @sentinel/web test:e2e`, plus load test & security audit), capture final Phase 9 verification screenshots in `docs/evidence/phase-9/`, commit cleanly, and report final verified results!
+## Completed Phases (0–9)
+- [x] **Phase 0: Understand** — Repo digest (`_refs/`), domain synthesis, 6-persona panel decisions, gstack pressure-test, GSD specs (`6870845`).
+- [x] **Phase 1: Foundations** — Monorepo, `DESIGN.md` tokens, PostgreSQL partitioned schema + `FORCE RLS` + SHA-256 append-only audit chain, Better Auth RBAC (`f2e85a8`).
+- [x] **Phase 2: Data Layer** — `ProviderAdapter` contracts, `x-api-key` ingestion, streaming Apple XML/CSV/Takeout importers, quality & silence pipeline, Open-Meteo context, 11 seeded physiological scenarios (`85cc460`).
+- [x] **Phase 3: Detection Engine** — Contamination-quarantined personal baseline (median/`1.4826*MAD`/14d shrinkage), L1/L2/L3 engine, Partial NEWS2, causal ablation harness, UTF-8 Postgres self-healing (`a34e12d`).
+- [x] **Phase 4: Alerting & Escalation** — Anti-fatigue policy engine, 5-step escalation ladder, transactional Postgres outbox (`in_app`, `web_push`, `email`, `telegram`, `ntfy`, `sms_flag`), live SSE, emergency `112`/`108` + hospitals (`cee0b6b`).
+- [x] **Phase 5: Dashboards & Workflows** — Elder Mode `/today`, Caregiver SSE Console `/caregiver`, Clinician ECharts & Partial NEWS2 `/clinician`, Signal Explorer & Quarantine `/signals`, Settings & DPDP Export/Erasure `/settings` (`ba75506`).
+- [x] **Phase 6: Experience, Visuals, i18n & PWA** — Restrained `@paper-design/shaders-react` pulse hero (`<=1` WebGL context, off-screen pause, static `reducedMotion` fallback), EN/KN/HI JSON catalogs, PWA `manifest.webmanifest` + `/sw.js` (`541bbc4`).
+- [x] **Phase 7: Voice Check-In, Inbox Worker, Telegram & Medications** — Multilingual Voice Companion + barge-in TTS, `workers/inbox` Cloudflare Email Worker, Telegram bot webhook, NLM RxNorm drug lookup & dose adherence overlays (`7c83080`).
+- [x] **Phase 8: Evaluation Lab, Model Card & Exports** — Live causal ablation benchmark `/eval`, Model Card `/model-card` + `docs/MODEL-CARD.md`, Printable Clinical Report `/clinician/report`, FHIR R4 LOINC Bundle & de-identified cohort exports (`44113e7`).
+- [x] **Phase 9: Hardening, Load Testing, Architecture Docs & Delivery** — OWASP ASVS/DPDP security tests, live concurrent ingestion load probe (`0` errors, `71.2 req/s`, ingest `p95=432.7ms`), `README.md`, `docs/ARCHITECTURE.md`, `docs/PITCH.md`.

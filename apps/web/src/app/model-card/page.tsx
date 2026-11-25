@@ -11,7 +11,9 @@ export default function ModelCardPage() {
         <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
           <div className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="text-xl font-semibold">Sachet · SENTINEL Statistical Engine (`sentinel-det-v1.0.0`)</h2>
+            <h2 className="text-xl font-semibold">
+              Sachet · SENTINEL Statistical Engine (<code>sentinel-det-v1.0.0</code>)
+            </h2>
           </div>
           <p className="mt-2 text-sm text-[var(--text-muted)]">
             A deterministic, explainable 3-layer physiological deterioration awareness model designed
@@ -26,7 +28,7 @@ export default function ModelCardPage() {
               Intended strictly as an early-awareness screening companion highlighting deviations from
               a person&apos;s own normal (&ldquo;changes from your personal normal&rdquo;). SENTINEL
               is NOT a medical device and NEVER issues diagnostic claims. Urgent alerts display
-              configured emergency services (`112` / `108` India default).
+              configured emergency services (112 / 108 India default).
             </p>
           </div>
 
@@ -34,10 +36,11 @@ export default function ModelCardPage() {
             <h3 className="text-base font-semibold">2. Personal Baseline & Architecture</h3>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-[var(--text-muted)]">
               <li>
-                <strong>Baseline Calibration:</strong> Weighted median + `1.4826 * MAD` scale per
-                metric/circadian block with 14-day empirical Bayes shrinkage (`k=5` days) toward age/sex
-                and condition priors (`warming_prior` -&gt; `learning` -&gt; `calibrated`) and quarantine
-                against `excluded_periods` and 48h tail acute windows.
+                <strong>Baseline Calibration:</strong> Weighted median + <code>1.4826 × MAD</code>{' '}
+                scale per metric/circadian block with 14-day empirical Bayes shrinkage (<code>k=5</code>{' '}
+                days) toward age/sex and condition priors (
+                <code>warming_prior -&gt; learning -&gt; calibrated</code>) and quarantine against{' '}
+                <code>excluded_periods</code> and 48h tail acute windows.
               </li>
               <li>
                 <strong>L1 Safety Bounds:</strong> Cited critical thresholds (NEWS2-aligned + COPD
@@ -45,12 +48,14 @@ export default function ModelCardPage() {
               </li>
               <li>
                 <strong>L2 Personal Temporal Detectors:</strong> Directional z-score, EWMA drift,
-                Page-Hinkley/CUSUM accumulator, and `ruptures.Pelt` change-point localization.
+                Page-Hinkley/CUSUM accumulator, and <code>ruptures.Pelt</code> change-point
+                localization.
               </li>
               <li>
-                <strong>L3 Multivariate Coherence:</strong> Robust covariance (`MinCovDet` /
-                `LedoitWolf`) Mahalanobis distance, streaming `river.anomaly.HalfSpaceTrees`, and
-                `IsolationForest`. Neural autoencoder ships disabled behind `ENABLE_AUTOENCODER_L3`.
+                <strong>L3 Multivariate Coherence:</strong> Robust covariance (<code>MinCovDet</code> /{' '}
+                <code>LedoitWolf</code>) Mahalanobis distance, streaming{' '}
+                <code>river.anomaly.HalfSpaceTrees</code>, and <code>IsolationForest</code>. Neural
+                autoencoder ships disabled behind <code>ENABLE_AUTOENCODER_L3=false</code>.
               </li>
             </ul>
           </div>
@@ -66,12 +71,12 @@ export default function ModelCardPage() {
               </li>
               <li>
                 <strong>Motion Artifacts:</strong> Optical HR/SpO2 drops during high step cadence are
-                flagged `motion_artifact` with reduced confidence (`&lt; 0.50`).
+                flagged <code>motion_artifact</code> with reduced confidence (&lt; 0.50).
               </li>
               <li>
                 <strong>Partial NEWS2 Limits:</strong> Wearables cannot measure ACVPU consciousness,
-                supplemental O2 usage, or passive cuff BP; SENTINEL marks these fields explicitly
-                `unavailable_from_wearable`.
+                supplemental O2 usage, or passive cuff BP; SENTINEL marks these fields explicitly{' '}
+                <code>unavailable_from_wearable</code>.
               </li>
             </ul>
           </div>

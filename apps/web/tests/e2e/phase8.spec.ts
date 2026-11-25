@@ -56,6 +56,7 @@ test.describe('Phase 8 Evaluation Lab, Model Card & Clinical Exports E2E', () =>
     // 3. /clinician/report printable view & FHIR/cohort downloads
     await page.goto('/clinician/report');
     await expect(page.getByText(/Sachet · SENTINEL Longitudinal Telemetry Summary/i)).toBeVisible();
+    await expect(page.getByText(/Ramesh Pai/i).first()).toBeVisible({ timeout: 10_000 });
     await page.screenshot({
       path: resolve(EVIDENCE_DIR, 'clinician-report-desktop.png'),
       fullPage: true,
