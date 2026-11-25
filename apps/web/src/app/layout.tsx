@@ -46,6 +46,7 @@ export const metadata: Metadata = {
   title: 'Sachet · SENTINEL — Wearable Early-Awareness Platform',
   description:
     'Personal physiological baselines, deterministic anomaly detection, and calm caregiver escalation for elderly and chronic care.',
+  manifest: '/manifest.webmanifest',
 };
 
 export const viewport: Viewport = {

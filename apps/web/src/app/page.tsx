@@ -11,6 +11,8 @@ import {
   Users,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { CalmFade } from '@/components/motion/primitives';
+import { PulseHeroVisual } from '@/components/visuals/pulse-hero';
 import { getPool } from '@/db';
 import { getSessionContext } from '@/lib/session';
 
@@ -31,7 +33,7 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+      <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/85 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]">
@@ -99,38 +101,46 @@ export default async function HomePage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 sm:p-10">
-          <div className="inline-flex items-center gap-2 rounded-full bg-[var(--status-stable-bg)] px-3 py-1 text-xs font-semibold text-[var(--status-stable)]">
-            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Screening & Early Awareness · Non-Diagnostic</span>
-          </div>
+        <CalmFade>
+          <section className="grid items-center gap-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 sm:p-10 lg:grid-cols-[1.25fr_1fr]">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[var(--status-stable-bg)] px-3 py-1 text-xs font-semibold text-[var(--status-stable)]">
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Screening & Early Awareness · Non-Diagnostic</span>
+              </div>
 
-          <h1 className="mt-4 max-w-3xl font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
-            Personal physiological baselines that spot deterioration days before crisis.
-          </h1>
-          <p className="mt-4 max-w-2xl text-base text-[var(--text-muted)]">
-            Built for elderly home care and Nitte Pharma Innovation Centre Problem S2. Phase 1
-            establishes cryptographic PHI protection, DPDP-aligned consent ledgers, PostgreSQL Row-Level
-            Security, and accessible clinical design tokens.
-          </p>
+              <h1 className="mt-4 max-w-3xl font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
+                Personal physiological baselines that spot deterioration days before crisis.
+              </h1>
+              <p className="mt-4 max-w-2xl text-base text-[var(--text-muted)]">
+                Built for elderly home care and Nitte Pharma Innovation Centre Problem S2.
+                Calibrated to each individual&apos;s own normal with cryptographic PHI protection,
+                DPDP-aligned consent ledgers, and calm multilingual care workflows.
+              </p>
 
-          <div className="mt-8 flex flex-wrap items-center gap-4">
-            <Link
-              href="/auth"
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-5 py-3 text-base font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
-            >
-              <span>{session ? `Signed in as ${session.name} (${session.role})` : 'Sign In / Switch Role'}</span>
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-            <Link
-              href="/settings/consent"
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-5 py-3 text-base font-medium text-[var(--text-primary)] hover:opacity-90"
-            >
-              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-              <span>Open Consent & Audit Ledger</span>
-            </Link>
-          </div>
-        </section>
+              <div className="mt-8 flex flex-wrap items-center gap-4">
+                <Link
+                  href="/auth"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-5 py-3 text-base font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
+                >
+                  <span>
+                    {session ? `Signed in as ${session.name} (${session.role})` : 'Sign In / Switch Role'}
+                  </span>
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+                <Link
+                  href="/settings/consent"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-5 py-3 text-base font-medium text-[var(--text-primary)] hover:opacity-90"
+                >
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  <span>Open Consent & Audit Ledger</span>
+                </Link>
+              </div>
+            </div>
+
+            <PulseHeroVisual />
+          </section>
+        </CalmFade>
 
         <section
           aria-label="Live System Verification"

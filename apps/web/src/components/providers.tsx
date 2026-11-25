@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MotionConfig } from 'motion/react';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { PwaOfflineBanner } from '@/components/pwa-offline-banner';
 
 type Theme = 'light' | 'dark';
 
@@ -55,7 +56,10 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
       <QueryClientProvider client={queryClient}>
-        <MotionConfig reducedMotion="user">{children}</MotionConfig>
+        <MotionConfig reducedMotion="user">
+          <PwaOfflineBanner />
+          {children}
+        </MotionConfig>
       </QueryClientProvider>
     </ThemeContext.Provider>
   );

@@ -37,7 +37,7 @@ export function SentinelNav({
   const pathname = usePathname();
 
   return (
-    <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+    <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/85 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
         <div className="flex min-w-0 flex-wrap items-center gap-2.5">
           <Link

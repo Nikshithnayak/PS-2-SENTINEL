@@ -1,0 +1,20 @@
+{
+  "brand": "Sachet · SENTINEL",
+  "tagline": "Wearable Early-Awareness Platform",
+  "heroHeadline": "Personal physiological baselines that spot deterioration days before crisis.",
+  "heroLead": "Early awareness for elderly home care — calibrated to your own normal, never a medical diagnosis.",
+  "status": {
+    "stable": "All readings look steady today",
+    "watch": "Small changes from your normal",
+    "warning": "Noticeable changes from your normal",
+    "urgent": "Important health check needed now"
+  },
+  "actions": {
+    "feelOkay": "I Feel Okay",
+    "notWell": "Not Feeling Well",
+    "why": "Why am I seeing this?",
+    "readAloud": "Read Aloud",
+    "emergencyHelp": "Emergency Help"
+  },
+  "offlineBanner": "Offline mode active — cached status shown. Emergency 112 / 108 always works offline."
+}

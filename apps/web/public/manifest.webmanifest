@@ -1,0 +1,16 @@
+{
+  "name": "Sachet · SENTINEL",
+  "short_name": "SENTINEL",
+  "description": "Wearable early health awareness for elderly care — personal baselines, calm alerts, and caregiver escalation.",
+  "start_url": "/today",
+  "display": "standalone",
+  "background_color": "#FAF8F4",
+  "theme_color": "#0F766E",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
