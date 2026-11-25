@@ -1,0 +1,48 @@
+# Reference clones (Phase 0 repo digest - never commit)
+_refs/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Build & Framework artifacts
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local DB / Data / Logs
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+logs/
+*.log
+
+# Test artifacts (screenshots saved to docs/evidence/ are tracked)
+playwright-report/
+test-results/
+coverage/
+.nyc_output/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.kilo/
+.kilocode/
