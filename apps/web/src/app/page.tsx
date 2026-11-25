@@ -2,6 +2,7 @@ import Link from 'next/link';
 import {
   Activity,
   ArrowRight,
+  BellRing,
   CheckCircle2,
   Database,
   Lock,
@@ -41,11 +42,18 @@ export default async function HomePage() {
                 Sachet · SENTINEL
               </p>
               <p className="text-xs text-[var(--text-muted)]">
-                Wearable Early-Awareness Platform · Phase 1 Foundations
+                Wearable Early-Awareness Platform
               </p>
             </div>
           </div>
           <nav aria-label="Primary navigation" className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <Link
+              href="/alerts"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+            >
+              <BellRing className="h-4 w-4" aria-hidden="true" />
+              <span>Alerts</span>
+            </Link>
             <Link
               href="/ingest"
               className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"

@@ -29,6 +29,17 @@ export const auth = betterAuth({
     enabled: true,
     requireEmailVerification: false,
   },
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 120,
+    customRules: {
+      '/sign-in/email': {
+        window: 60,
+        max: 60,
+      },
+    },
+  },
   user: {
     additionalFields: {
       role: {

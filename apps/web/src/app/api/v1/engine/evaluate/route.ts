@@ -3,11 +3,13 @@ import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { withSystemDb } from '@/db';
 import { baselineStates, patientProfiles, riskAssessments } from '@/db/schema';
+import { maybeTriggerAlertFromEvaluation } from '@/lib/alerts/outbox';
 import { runAndPersistEvaluation } from '@/lib/engine/client';
 import { checkPatientScope, requireSession } from '@/lib/session';
 
 const EvaluateBodySchema = z.object({
   patientId: z.string().uuid().optional(),
+  bypassPersistence: z.boolean().optional(),
 });
 
 async function resolveTargetPatientId(userId: string, requested?: string): Promise<string | null> {
@@ -82,5 +84,11 @@ export async function POST(request: NextRequest) {
     actorUserId: ctx.userId,
   });
 
-  return NextResponse.json(evaluation, { status: 201 });
+  const alertPolicyResult = await maybeTriggerAlertFromEvaluation({
+    evaluation,
+    actorUserId: ctx.userId,
+    bypassPersistence: parsed.data.bypassPersistence,
+  });
+
+  return NextResponse.json({ ...evaluation, alertPolicyResult }, { status: 201 });
 }

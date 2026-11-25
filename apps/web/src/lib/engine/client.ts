@@ -29,6 +29,7 @@ export interface SignalContribution {
 }
 
 export interface EngineEvaluationResult {
+  riskAssessmentId?: string;
   patientId: string;
   assessedAt: string;
   modelVersion: string;
@@ -378,7 +379,7 @@ export async function runAndPersistEvaluation(params: {
 
   // Persist baseline states, risk assessment, and immutable detector decision log
   const assessedDate = new Date(evaluated.assessedAt);
-  await withSystemDb(async (tx) => {
+  const assessmentId = await withSystemDb(async (tx) => {
     for (const mb of evaluated.baseline.metrics.slice(0, 16)) {
       const existing = await tx
         .select({ id: baselineStates.id })
@@ -427,23 +428,26 @@ export async function runAndPersistEvaluation(params: {
       }
     }
 
-    await tx.insert(riskAssessments).values({
-      patientId,
-      assessedAt: assessedDate,
-      deteriorationIndex: evaluated.deteriorationIndex,
-      level: evaluated.level,
-      confidence: Number(evaluated.decisionLog.recentConfidence ?? 1.0),
-      l1Score: evaluated.l1Score,
-      l2Score: evaluated.l2Score,
-      l3Score: evaluated.l3Score,
-      partialNews2: evaluated.partialNews2 as unknown as Record<string, unknown>,
-      contributions: evaluated.contributions as unknown as Array<Record<string, unknown>>,
-      trend72h: evaluated.trend72h.map((pt) => ({ ts: pt.timestamp, index: pt.score })),
-      explanationEn: evaluated.summaryText,
-      explanationKn: evaluated.explanationKn,
-      explanationHi: evaluated.explanationHi,
-      isSynthetic: evaluated.isSynthetic,
-    });
+    const [insertedAssessment] = await tx
+      .insert(riskAssessments)
+      .values({
+        patientId,
+        assessedAt: assessedDate,
+        deteriorationIndex: evaluated.deteriorationIndex,
+        level: evaluated.level,
+        confidence: Number(evaluated.decisionLog.recentConfidence ?? 1.0),
+        l1Score: evaluated.l1Score,
+        l2Score: evaluated.l2Score,
+        l3Score: evaluated.l3Score,
+        partialNews2: evaluated.partialNews2 as unknown as Record<string, unknown>,
+        contributions: evaluated.contributions as unknown as Array<Record<string, unknown>>,
+        trend72h: evaluated.trend72h.map((pt) => ({ ts: pt.timestamp, index: pt.score })),
+        explanationEn: evaluated.summaryText,
+        explanationKn: evaluated.explanationKn,
+        explanationHi: evaluated.explanationHi,
+        isSynthetic: evaluated.isSynthetic,
+      })
+      .returning({ id: riskAssessments.id });
 
     await tx.insert(detectorDecisionLogs).values({
       patientId,
@@ -467,7 +471,7 @@ export async function runAndPersistEvaluation(params: {
       actorUserId,
       action: 'engine.evaluated',
       targetType: 'risk_assessment',
-      targetId: patientId,
+      targetId: insertedAssessment?.id ?? patientId,
       payload: {
         patientId,
         engineSource: evaluated.engineSource,
@@ -477,7 +481,12 @@ export async function runAndPersistEvaluation(params: {
         isSynthetic: evaluated.isSynthetic,
       },
     });
+
+    return insertedAssessment?.id;
   });
 
-  return evaluated;
+  return {
+    ...evaluated,
+    riskAssessmentId: assessmentId,
+  };
 }
