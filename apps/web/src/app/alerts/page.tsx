@@ -174,6 +174,29 @@ export default function AlertsOperationsPage() {
     onError: (err) => setErrorBanner(err instanceof Error ? err.message : 'Update failed'),
   });
 
+  const inboxReplyMutation = useMutation({
+    mutationFn: async (replyText: 'OK' | 'CALL ME' | 'SNOOZE') => {
+      const res = await fetch('/api/v1/webhooks/inbox-reply', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          patientId: alertsQuery.data?.patientId,
+          fromEmail: 'kavitha@sentinel.local',
+          bodyText: replyText,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? 'Inbox reply webhook failed');
+      return body;
+    },
+    onSuccess: (data) => {
+      setErrorBanner(null);
+      setBanner(`Inbound Email Worker processed (${data.parsedCommand} -> ${data.status}).`);
+      qc.invalidateQueries({ queryKey: ['alerts-ops'] });
+    },
+    onError: (err) => setErrorBanner(err instanceof Error ? err.message : 'Webhook failed'),
+  });
+
   const isUnauth = alertsQuery.error?.message === '401';
   const hasSynthetic = (alertsQuery.data?.alerts ?? []).some((a) => a.isSynthetic);
 
@@ -448,6 +471,30 @@ export default function AlertsOperationsPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </section>
+
+            {/* Cloudflare Agentic Inbox Reply Channel Simulator */}
+            <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
+              <h2 className="text-lg font-semibold">
+                Caregiver Inbound Email Reply Channel (workers/inbox)
+              </h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Simulates Cloudflare Email Routing replies (OK, CALL ME, SNOOZE) forwarded by
+                @sentinel/inbox-worker to /api/v1/webhooks/inbox-reply.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(['OK', 'CALL ME', 'SNOOZE'] as const).map((cmd) => (
+                  <button
+                    key={cmd}
+                    type="button"
+                    disabled={inboxReplyMutation.isPending}
+                    onClick={() => inboxReplyMutation.mutate(cmd)}
+                    className="min-h-11 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 text-xs font-semibold hover:bg-[var(--bg-elevated)] cursor-pointer"
+                  >
+                    Simulate Email Reply: {cmd}
+                  </button>
+                ))}
               </div>
             </section>
           </>

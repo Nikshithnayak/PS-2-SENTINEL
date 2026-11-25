@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "echo \"Phase 7 inbox worker placeholder typecheck ok\"",
-    "test": "echo \"Phase 7 inbox worker placeholder tests ok\""
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/inbox.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "5.9.3"
   }
 }

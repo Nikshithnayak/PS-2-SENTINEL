@@ -1,0 +1,8 @@
+name = "sentinel-agentic-inbox"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[vars]
+SENTINEL_API_URL = "https://your-sentinel-host.example.com"
+
+# Secret binding configured via: wrangler secret put INBOX_WEBHOOK_SECRET

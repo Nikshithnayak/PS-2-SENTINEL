@@ -38,7 +38,7 @@ test.describe('Phase 5 Multi-Role Dashboards Closed Loop E2E', () => {
     await expect(page.getByRole('heading', { name: /Patient Today/i })).toBeVisible();
     await page.getByRole('button', { name: /Why am I seeing this/i }).click();
     await expect(page.getByTestId('why-drawer')).toBeVisible();
-    await page.getByRole('button', { name: 'I Feel Okay' }).click();
+    await page.getByRole('button', { name: 'I Feel Okay', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('I feel okay today');
 
     let axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag22aa']).analyze();

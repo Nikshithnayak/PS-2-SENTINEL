@@ -42,13 +42,13 @@ test.describe('Phase 4 Alerting, Escalation Ladder & Transactional Outbox E2E', 
     // Evaluate & Dispatch Alert
     await page.getByRole('button', { name: 'Evaluate & Dispatch Alerts' }).click();
     await expect(page.getByText(/Evaluated \(Index/)).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/Step 1 · Primary Caregiver/)).toBeVisible();
+    await expect(page.getByText(/Step 1 · Primary Caregiver/).first()).toBeVisible();
     await expect(page.getByText('Transactional Outbox Delivery Receipts')).toBeVisible();
     await expect(page.getByRole('cell', { name: 'email' }).first()).toBeVisible();
 
     // Escalate step 1 -> step 2
     await page.getByRole('button', { name: /Escalate Step/i }).first().click();
-    await expect(page.getByText(/Step 2 · Secondary Caregiver/)).toBeVisible();
+    await expect(page.getByText(/Step 2 · Secondary Caregiver/).first()).toBeVisible();
 
     // Acknowledge with feedback
     await page.getByRole('button', { name: /Acknowledge/i }).first().click();

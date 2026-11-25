@@ -11,9 +11,11 @@ import {
   HelpCircle,
   Lock,
   PhoneCall,
+  Pill,
   Volume2,
 } from 'lucide-react';
 import { SentinelNav } from '@/components/sentinel-nav';
+import { VoiceCheckinCompanion } from '@/components/voice/voice-checkin';
 
 interface PatientDashboardData {
   patientId: string;
@@ -52,6 +54,13 @@ interface PatientDashboardData {
     kind: string;
     severity: string;
     recordedAt: string;
+  }>;
+  medications: Array<{
+    id: string;
+    name: string;
+    dosage: string;
+    scheduleTimes: string[];
+    affectsHeartRate: boolean;
   }>;
 }
 
@@ -137,6 +146,27 @@ export default function PatientTodayPage() {
           ? 'Saved: I feel okay today. Shared with your care circle.'
           : 'Saved: Care circle alerted that you are not feeling well.',
       );
+      qc.invalidateQueries({ queryKey: ['dashboard-patient'] });
+    },
+  });
+
+  const medMutation = useMutation({
+    mutationFn: async (vars: { medicationId: string; status: 'taken' | 'missed' }) => {
+      const res = await fetch('/api/v1/medications', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'log_dose',
+          patientId: query.data?.patientId,
+          medicationId: vars.medicationId,
+          status: vars.status,
+        }),
+      });
+      if (!res.ok) throw new Error('Medication log failed');
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      setCheckinMsg(`Dose recorded as "${vars.status}".`);
       qc.invalidateQueries({ queryKey: ['dashboard-patient'] });
     },
   });
@@ -389,6 +419,58 @@ export default function PatientTodayPage() {
                 </div>
               )}
             </section>
+
+            {/* Voice Check-In Companion */}
+            <VoiceCheckinCompanion
+              patientId={query.data?.patientId}
+              locale={lang}
+              isSynthetic={Boolean(query.data?.isSynthetic)}
+              onRecorded={() => qc.invalidateQueries({ queryKey: ['dashboard-patient'] })}
+            />
+
+            {/* Daily Medication Schedule & Adherence Overlay */}
+            {(query.data?.medications ?? []).length > 0 && (
+              <section className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
+                <div className="flex items-center gap-2">
+                  <Pill className="h-6 w-6 text-[var(--brand-primary)]" aria-hidden="true" />
+                  <h2 className="text-xl font-semibold">Today&apos;s Medication Check</h2>
+                </div>
+                <ul className="mt-4 space-y-3">
+                  {(query.data?.medications ?? []).map((med) => (
+                    <li
+                      key={med.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4"
+                    >
+                      <div>
+                        <p className="text-lg font-semibold">
+                          {med.name} · {med.dosage}
+                        </p>
+                        <p className="text-sm text-[var(--text-muted)]">
+                          Schedule: {med.scheduleTimes.join(', ')}
+                          {med.affectsHeartRate ? ' · Influences heart rate trend' : ''}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => medMutation.mutate({ medicationId: med.id, status: 'taken' })}
+                          className="min-h-12 rounded-xl bg-[var(--status-stable)] px-4 text-base font-bold text-white cursor-pointer"
+                        >
+                          Mark Taken
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => medMutation.mutate({ medicationId: med.id, status: 'missed' })}
+                          className="min-h-12 rounded-xl border border-[var(--status-watch)] px-4 text-base font-bold text-[var(--status-watch)] cursor-pointer"
+                        >
+                          Missed Dose
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
 
             {/* Unmistakable Emergency Card */}
             <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-[var(--status-urgent)] bg-[var(--bg-surface)] p-5">
