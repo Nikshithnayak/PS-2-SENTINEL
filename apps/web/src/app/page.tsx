@@ -48,6 +48,24 @@ export default async function HomePage() {
           </div>
           <nav aria-label="Primary navigation" className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Link
+              href="/today"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+            >
+              <span>Today (Elder)</span>
+            </Link>
+            <Link
+              href="/caregiver"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+            >
+              <span>Caregiver</span>
+            </Link>
+            <Link
+              href="/clinician"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+            >
+              <span>Clinician</span>
+            </Link>
+            <Link
               href="/alerts"
               className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
             >

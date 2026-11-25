@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { desc, eq } from 'drizzle-orm';
-import { withSystemDb } from '@/db';
+import { and, desc, eq } from 'drizzle-orm';
+import { appendAuditLog, withSystemDb } from '@/db';
 import { alertDeliveries, alerts, patientProfiles } from '@/db/schema';
 import { checkPatientScope, requireSession } from '@/lib/session';
 
@@ -74,4 +74,38 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json(payload);
+}
+
+export async function DELETE(request: NextRequest) {
+  const authRes = await requireSession();
+  if (authRes.error) return authRes.error;
+  const { ctx } = authRes;
+
+  const patientId = await resolvePatientId(
+    ctx.userId,
+    request.nextUrl.searchParams.get('patientId') ?? undefined,
+  );
+  if (!patientId) {
+    return NextResponse.json({ error: 'patientId required' }, { status: 400 });
+  }
+  const hasScope = await checkPatientScope(ctx, patientId, 'vitals_read');
+  if (!hasScope) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // Strictly only removes synthetic sandbox alerts; preserves real clinical alerts untouched
+  await withSystemDb(async (tx) => {
+    await tx
+      .delete(alerts)
+      .where(and(eq(alerts.patientId, patientId), eq(alerts.isSynthetic, true)));
+    await appendAuditLog(tx, {
+      actorUserId: ctx.userId,
+      action: 'alerts.synthetic_cleared',
+      targetType: 'patient_profile',
+      targetId: patientId,
+      payload: { patientId },
+    });
+  });
+
+  return NextResponse.json({ clearedSynthetic: true });
 }

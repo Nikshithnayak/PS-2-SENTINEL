@@ -23,6 +23,9 @@ test.describe('Phase 4 Alerting, Escalation Ladder & Transactional Outbox E2E', 
     await page.getByRole('button', { name: 'Sign In', exact: true }).click();
     await page.waitForURL('**/settings/consent');
 
+    // Reset synthetic alert sandbox so cooldowns from prior test runs never pollute this flow
+    await page.request.delete('/api/v1/alerts');
+
     // Ensure patient has urgent scenario samples loaded (urgent bypasses quiet hours 24/7)
     await page.goto('/ingest');
     await page.getByLabel('Scenario').selectOption('copd_exacerbation');
