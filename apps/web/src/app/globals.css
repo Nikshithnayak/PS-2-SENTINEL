@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+:root {
+  --bg-base: #f6f9fc;
+  --bg-surface: #ffffff;
+  --bg-elevated: #eff5f8;
+  --border-subtle: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-muted: #475569;
+  --brand-primary: #0f766e;
+  --brand-primary-fg: #ffffff;
+  --brand-accent-text: #115e59;
+
+  --status-stable: #047857;
+  --status-stable-bg: #ecfdf5;
+  --status-watch: #b45309;
+  --status-watch-bg: #fffbeb;
+  --status-warning: #c2410c;
+  --status-warning-bg: #fff7ed;
+  --status-urgent: #b91c1c;
+  --status-urgent-bg: #fef2f2;
+  --status-synthetic: #0369a1;
+  --status-synthetic-bg: #e0f2fe;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+.dark {
+  --bg-base: #0b1117;
+  --bg-surface: #121b24;
+  --bg-elevated: #1a2633;
+  --border-subtle: #263545;
+  --text-primary: #f8fafc;
+  --text-muted: #94a3b8;
+  --brand-primary: #2dd4bf;
+  --brand-primary-fg: #042f2e;
+  --brand-accent-text: #5eead4;
+
+  --status-stable: #34d399;
+  --status-stable-bg: #052e23;
+  --status-watch: #fbbf24;
+  --status-watch-bg: #312107;
+  --status-warning: #fb923c;
+  --status-warning-bg: #361806;
+  --status-urgent: #f87171;
+  --status-urgent-bg: #3b0d0d;
+  --status-synthetic: #38bdf8;
+  --status-synthetic-bg: #0c2b3e;
+}
+
+@theme inline {
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-sans: var(--font-atkinson), var(--font-kannada), var(--font-devanagari), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+
+html,
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus rings strictly visible for WCAG 2.2 AA/AAA keyboard accessibility */
+:focus-visible {
+  outline: 3px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+.elder-text {
+  font-size: 1.125rem; /* 18px minimum floor */
+  line-height: 1.6;
+}
+
+.elder-target {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "version": "1.0.0",
+  "enums": {
+    "roles": [
+      "patient",
+      "caregiver",
+      "clinician",
+      "org_admin"
+    ],
+    "locales": [
+      "en",
+      "kn",
+      "hi"
+    ],
+    "conditionModules": [
+      "general_frailty",
+      "heart_failure",
+      "copd",
+      "hypertension",
+      "diabetes"
+    ],
+    "metricTypes": [
+      "heart_rate",
+      "resting_heart_rate",
+      "hrv_rmssd",
+      "spo2",
+      "respiratory_rate",
+      "skin_temp_deviation",
+      "body_temperature",
+      "steps",
+      "sleep_duration_min",
+      "sleep_efficiency",
+      "sleep_awakenings",
+      "systolic_bp",
+      "blood_glucose",
+      "weight_kg",
+      "afib_burden"
+    ],
+    "activityContexts": [
+      "sleep",
+      "rest",
+      "light_activity",
+      "exercise",
+      "unknown"
+    ],
+    "qualityFlags": [
+      "ok",
+      "motion_artifact",
+      "low_perfusion",
+      "out_of_bounds",
+      "duplicate",
+      "gap_interpolated",
+      "off_wrist",
+      "device_silent",
+      "unit_converted"
+    ],
+    "alertLevels": [
+      "stable",
+      "watch",
+      "warning",
+      "urgent"
+    ],
+    "consentScopes": [
+      "vitals_read",
+      "alerts_receive",
+      "checkin_view",
+      "clinician_export"
+    ],
+    "channelTypes": [
+      "in_app",
+      "web_push",
+      "email",
+      "telegram",
+      "ntfy",
+      "sms_flag"
+    ],
+    "providerSources": [
+      "apple_health_xml",
+      "google_takeout",
+      "fitbit_takeout",
+      "csv_import",
+      "open_wearables",
+      "google_health_api",
+      "open_ingest_api",
+      "manual_checkin",
+      "synthetic_sim"
+    ]
+  },
+  "canonicalUnits": {
+    "heart_rate": "bpm",
+    "resting_heart_rate": "bpm",
+    "hrv_rmssd": "ms",
+    "spo2": "%",
+    "respiratory_rate": "breaths/min",
+    "skin_temp_deviation": "degC",
+    "body_temperature": "degC",
+    "steps": "count",
+    "sleep_duration_min": "min",
+    "sleep_efficiency": "%",
+    "sleep_awakenings": "count",
+    "systolic_bp": "mmHg",
+    "blood_glucose": "mg/dL",
+    "weight_kg": "kg",
+    "afib_burden": "%"
+  },
+  "physicalBounds": {
+    "heart_rate": {
+      "min": 20,
+      "max": 250
+    },
+    "resting_heart_rate": {
+      "min": 25,
+      "max": 200
+    },
+    "hrv_rmssd": {
+      "min": 1,
+      "max": 350
+    },
+    "spo2": {
+      "min": 50,
+      "max": 100
+    },
+    "respiratory_rate": {
+      "min": 4,
+      "max": 60
+    },
+    "skin_temp_deviation": {
+      "min": -6,
+      "max": 6
+    },
+    "body_temperature": {
+      "min": 30,
+      "max": 43
+    },
+    "steps": {
+      "min": 0,
+      "max": 100000
+    },
+    "sleep_duration_min": {
+      "min": 0,
+      "max": 1440
+    },
+    "sleep_efficiency": {
+      "min": 0,
+      "max": 100
+    },
+    "sleep_awakenings": {
+      "min": 0,
+      "max": 100
+    },
+    "systolic_bp": {
+      "min": 50,
+      "max": 280
+    },
+    "blood_glucose": {
+      "min": 20,
+      "max": 700
+    },
+    "weight_kg": {
+      "min": 20,
+      "max": 300
+    },
+    "afib_burden": {
+      "min": 0,
+      "max": 100
+    }
+  }
+}

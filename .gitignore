@@ -32,6 +32,7 @@ build/
 *.sqlite
 *.sqlite3
 pgdata/
+.local-pgdata/
 logs/
 *.log
 

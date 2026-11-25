@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg17
+    container_name: sentinel-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel}
+      POSTGRES_DB: ${POSTGRES_DB:-sentinel}
+    ports:
+      - "5432:5432"
+    volumes:
+      - sentinel_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentinel} -d ${POSTGRES_DB:-sentinel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  engine:
+    build:
+      context: ./services/engine
+      dockerfile: Dockerfile
+    container_name: sentinel-engine
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD:-sentinel}@postgres:5432/${POSTGRES_DB:-sentinel}
+      ENGINE_INTERNAL_TOKEN: ${ENGINE_INTERNAL_TOKEN:-dev-engine-internal-token-change-in-prod}
+      ENABLE_AUTOENCODER_L3: ${ENABLE_AUTOENCODER_L3:-false}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: sentinel-web
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD:-sentinel}@postgres:5432/${POSTGRES_DB:-sentinel}
+      ENGINE_URL: http://engine:8000
+      ENGINE_INTERNAL_TOKEN: ${ENGINE_INTERNAL_TOKEN:-dev-engine-internal-token-change-in-prod}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-better-auth-secret-replace-with-64-hex-chars-in-production-00}
+      BETTER_AUTH_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      PHI_ENCRYPTION_KEY: ${PHI_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      engine:
+        condition: service_healthy
+
+  open-wearables:
+    image: themomentum/open-wearables-backend:latest
+    profiles: ["open-wearables"]
+    container_name: sentinel-open-wearables
+    environment:
+      DB_HOST: postgres
+    ports:
+      - "8085:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  sentinel_pgdata:

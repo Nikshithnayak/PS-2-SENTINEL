@@ -1,0 +1,31 @@
+{
+  "name": "sentinel-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "db:migrate": "pnpm --filter @sentinel/web db:migrate",
+    "db:seed": "pnpm --filter @sentinel/web db:seed",
+    "test:e2e": "pnpm --filter @sentinel/web test:e2e"
+  },
+  "devDependencies": {
+    "turbo": "2.9.6",
+    "typescript": "5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@embedded-postgres/windows-x64",
+      "@swc/core",
+      "esbuild"
+    ]
+  }
+}

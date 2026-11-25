@@ -1,0 +1,10 @@
+{
+  "name": "@sentinel/inbox-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "echo \"Phase 7 inbox worker placeholder typecheck ok\"",
+    "test": "echo \"Phase 7 inbox worker placeholder tests ok\""
+  }
+}
