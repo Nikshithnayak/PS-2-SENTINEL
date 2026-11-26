@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { withSystemDb } from '@/db';
 import { alerts, patientProfiles } from '@/db/schema';
 import { applyAlertAction } from '@/lib/alerts/outbox';
+import { resolveInboxWebhookSecret } from '@/lib/alerts/env-config';
 import { parseCaregiverReplyCommand } from '@/lib/alerts/reply-parser';
 import { getAccessiblePatientIds } from '@/lib/dashboard/queries';
 import { getSessionContext } from '@/lib/session';
@@ -16,7 +17,7 @@ const InboxReplySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const configuredSecret = process.env.INBOX_WEBHOOK_SECRET ?? process.env.BETTER_AUTH_SECRET;
+  const configuredSecret = resolveInboxWebhookSecret();
   const headerSecret = request.headers.get('x-inbox-secret');
   const sessionCtx = await getSessionContext();
 

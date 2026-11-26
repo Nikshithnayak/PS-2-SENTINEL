@@ -1,5 +1,11 @@
 import type { ChannelType } from '@sentinel/shared';
 import { sendNotification, setVapidDetails } from 'web-push';
+import {
+  isSmsAdapterEnabled,
+  resolveEmailFrom,
+  resolveNtfyConfig,
+  resolveVapidConfig,
+} from './env-config';
 
 export interface DeliveryDispatchInput {
   channel: ChannelType;
@@ -35,8 +41,9 @@ export async function dispatchChannelDelivery(
     }
 
     case 'web_push': {
-      const pub = process.env.VAPID_PUBLIC_KEY;
-      const priv = process.env.VAPID_PRIVATE_KEY;
+      const vapid = resolveVapidConfig();
+      const pub = vapid.publicKey;
+      const priv = vapid.privateKey;
       if (!pub || !priv || !input.pushSubscription) {
         return {
           status: 'captured_local',
@@ -45,11 +52,7 @@ export async function dispatchChannelDelivery(
         };
       }
       try {
-        setVapidDetails(
-          process.env.VAPID_SUBJECT ?? 'mailto:care@sentinel.local',
-          pub,
-          priv,
-        );
+        setVapidDetails(vapid.subject, pub, priv);
         await sendNotification(
           {
             endpoint: input.pushSubscription.endpoint,
@@ -96,7 +99,7 @@ export async function dispatchChannelDelivery(
             'content-type': 'application/json',
           },
           body: JSON.stringify({
-            from: process.env.ALERT_FROM_EMAIL ?? 'SENTINEL Alerts <alerts@sentinel.local>',
+            from: resolveEmailFrom(),
             to: [toEmail],
             subject: input.subject,
             text: `${input.bodyText}\n\nReply OK, CALL ME, or SNOOZE (token: ${input.actionToken}).`,
@@ -159,8 +162,7 @@ export async function dispatchChannelDelivery(
     }
 
     case 'ntfy': {
-      const topic = process.env.NTFY_TOPIC;
-      const baseUrl = process.env.NTFY_URL ?? 'https://ntfy.sh';
+      const { topic, baseUrl } = resolveNtfyConfig();
       if (!topic) {
         return {
           status: 'captured_local',
@@ -189,11 +191,12 @@ export async function dispatchChannelDelivery(
     }
 
     case 'sms_flag': {
-      if (process.env.ENABLE_SMS_GATEWAY !== 'true') {
+      if (!isSmsAdapterEnabled()) {
         return {
           status: 'skipped_flag_disabled',
           receipt: null,
-          error: 'SMS gateway disabled (set ENABLE_SMS_GATEWAY=true + Twilio credentials per SETUP-NEEDED.md)',
+          error:
+            'SMS gateway disabled (set ENABLE_SMS_ADAPTER=true + Twilio credentials per SETUP-NEEDED.md)',
         };
       }
       return {

@@ -20,6 +20,13 @@ import {
   evaluateAlertPolicy,
   isWithinQuietHours,
 } from '@/lib/alerts/policy';
+import {
+  isSmsAdapterEnabled,
+  resolveEmailFrom,
+  resolveInboxWebhookSecret,
+  resolveNtfyConfig,
+  resolveVapidConfig,
+} from '@/lib/alerts/env-config';
 import type { EngineEvaluationResult } from '@/lib/engine/client';
 
 let pgHandle: LocalPgHandle;
@@ -246,5 +253,56 @@ describe('Phase 4 Anti-Fatigue Policy, Escalation Ladder & Transactional Outbox'
     });
     expect(ack.status).toBe('acknowledged');
     expect(ack.updatedSensitivityOffset).toBe(-0.05);
+  });
+
+  it('resolves unified alert & webhook env aliases matching SETUP-NEEDED.md and .env.example', () => {
+    const vapidDocEnv = resolveVapidConfig(
+      {
+        NODE_ENV: 'production',
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'doc-pub-key',
+        VAPID_PRIVATE_KEY: 'doc-priv-key',
+      } as unknown as NodeJS.ProcessEnv,
+      false,
+    );
+    expect(vapidDocEnv.publicKey).toBe('doc-pub-key');
+    expect(vapidDocEnv.privateKey).toBe('doc-priv-key');
+    expect(vapidDocEnv.source).toBe('env');
+
+    expect(
+      resolveNtfyConfig({ NTFY_TOPIC_URL: 'https://ntfy.sh/sentinel-mangaluru' } as unknown as NodeJS.ProcessEnv),
+    ).toEqual({
+      baseUrl: 'https://ntfy.sh',
+      topic: 'sentinel-mangaluru',
+    });
+    expect(
+      resolveNtfyConfig({ NTFY_TOPIC_URL: 'https://ntfy.example.com/team/alerts' } as unknown as NodeJS.ProcessEnv),
+    ).toEqual({
+      baseUrl: 'https://ntfy.example.com/team',
+      topic: 'alerts',
+    });
+    expect(
+      resolveNtfyConfig({ NTFY_TOPIC_URL: 'https://ntfy.sh/' } as unknown as NodeJS.ProcessEnv),
+    ).toEqual({
+      baseUrl: 'https://ntfy.sh',
+      topic: null,
+    });
+
+    expect(
+      resolveEmailFrom({ EMAIL_FROM: 'Sachet Care <care@example.org>' } as unknown as NodeJS.ProcessEnv),
+    ).toBe('Sachet Care <care@example.org>');
+    expect(
+      isSmsAdapterEnabled({ ENABLE_SMS_ADAPTER: 'true' } as unknown as NodeJS.ProcessEnv),
+    ).toBe(true);
+    expect(
+      isSmsAdapterEnabled({ ENABLE_SMS_GATEWAY: 'true' } as unknown as NodeJS.ProcessEnv),
+    ).toBe(true);
+    expect(
+      isSmsAdapterEnabled({ ENABLE_SMS_ADAPTER: 'false' } as unknown as NodeJS.ProcessEnv),
+    ).toBe(false);
+    expect(
+      resolveInboxWebhookSecret({
+        CLOUDFLARE_INBOX_WEBHOOK_SECRET: 'cf-secret-1',
+      } as unknown as NodeJS.ProcessEnv),
+    ).toBe('cf-secret-1');
   });
 });

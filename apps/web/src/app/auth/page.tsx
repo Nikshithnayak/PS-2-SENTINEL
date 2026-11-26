@@ -8,10 +8,34 @@ import { authClient } from '@/lib/auth-client';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const DEMO_ACCOUNTS = [
-  { label: 'Ramesh Pai (Patient · Elder)', email: 'ramesh@sentinel.local', role: 'patient' },
-  { label: 'Kavitha Pai (Primary Caregiver)', email: 'kavitha@sentinel.local', role: 'caregiver' },
-  { label: 'Dr. Arvind Shetty (Clinician)', email: 'dr.shetty@sentinel.local', role: 'clinician' },
-  { label: 'Nitte Pharma R&D (Org Admin)', email: 'research@sentinel.local', role: 'org_admin' },
+  {
+    label: 'Ramesh Pai (Patient · Elder)',
+    email: 'ramesh@sentinel.local',
+    role: 'patient',
+    homeHref: '/today',
+    homeLabel: '/today',
+  },
+  {
+    label: 'Kavitha Pai (Primary Caregiver)',
+    email: 'kavitha@sentinel.local',
+    role: 'caregiver',
+    homeHref: '/caregiver',
+    homeLabel: '/caregiver',
+  },
+  {
+    label: 'Dr. Arvind Shetty (Clinician)',
+    email: 'dr.shetty@sentinel.local',
+    role: 'clinician',
+    homeHref: '/clinician',
+    homeLabel: '/clinician',
+  },
+  {
+    label: 'Nitte Pharma R&D (Org Admin)',
+    email: 'research@sentinel.local',
+    role: 'org_admin',
+    homeHref: '/eval',
+    homeLabel: '/eval',
+  },
 ] as const;
 
 export default function AuthPage() {
@@ -63,6 +87,31 @@ export default function AuthPage() {
     await authClient.signOut();
     await refetch();
     router.refresh();
+  }
+
+  async function handleQuickOpen(targetEmail: string, targetHref: string) {
+    setError(null);
+    setMode('signin');
+    setEmail(targetEmail);
+    setPassword('SentinelDemo#2026');
+    setLoading(true);
+    try {
+      const res = await authClient.signIn.email({
+        email: targetEmail,
+        password: 'SentinelDemo#2026',
+      });
+      if (res.error) {
+        setError(res.error.message ?? 'Sign in failed');
+        return;
+      }
+      await refetch();
+      router.push(targetHref);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication error');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -215,21 +264,33 @@ export default function AuthPage() {
             </h2>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {DEMO_ACCOUNTS.map((acct) => (
-                <button
+                <div
                   key={acct.email}
-                  type="button"
-                  onClick={() => {
-                    setMode('signin');
-                    setEmail(acct.email);
-                    setPassword('SentinelDemo#2026');
-                  }}
-                  className="min-h-11 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-left text-xs font-medium hover:border-[var(--brand-primary)] cursor-pointer"
+                  className="flex flex-col justify-between gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3"
                 >
-                  <div className="font-semibold text-[var(--text-primary)]">{acct.label}</div>
-                  <div className="font-[family-name:var(--font-mono)] text-[var(--text-muted)]">
-                    {acct.email}
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('signin');
+                      setEmail(acct.email);
+                      setPassword('SentinelDemo#2026');
+                    }}
+                    className="w-full text-left text-xs font-medium hover:underline cursor-pointer"
+                  >
+                    <div className="font-semibold text-[var(--text-primary)]">{acct.label}</div>
+                    <div className="font-[family-name:var(--font-mono)] text-[var(--text-muted)]">
+                      {acct.email}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleQuickOpen(acct.email, acct.homeHref)}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-xs font-semibold text-[var(--brand-accent-text)] transition hover:border-[var(--brand-primary)] disabled:opacity-60 cursor-pointer"
+                  >
+                    Quick Open {acct.homeLabel}
+                  </button>
+                </div>
               ))}
             </div>
           </div>

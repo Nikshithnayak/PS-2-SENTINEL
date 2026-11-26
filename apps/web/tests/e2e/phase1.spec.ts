@@ -40,7 +40,15 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'design-dark.png'), fullPage: true });
     await page.getByRole('button', { name: /Switch to light theme/i }).click();
 
-    // Sign in as Ramesh Pai via Better Auth
+    // Quick Open 1-click sign-in + direct workspace routing on /auth
+    await page.goto('/auth');
+    const authAxe = await new AxeBuilder({ page }).analyze();
+    expect(authAxe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')).toEqual([]);
+    await expect(page.getByRole('button', { name: 'Quick Open /today' })).toBeVisible();
+    await page.getByRole('button', { name: 'Quick Open /today' }).click();
+    await page.waitForURL('**/today');
+
+    // Sign in as Ramesh Pai via Better Auth standard Sign In -> Consent Ledger
     await page.goto('/auth');
     await page.getByRole('button', { name: 'Sign In', exact: true }).click();
     await page.waitForURL('**/settings/consent');

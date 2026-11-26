@@ -1,10 +1,38 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { applyMigrations, closeDb } from '../src/db/index.ts';
 import { ensurePostgresRunning } from '../src/db/local-pg.ts';
 import { seedDatabase } from '../src/db/seed.ts';
+
+function loadOptionalEnvFiles() {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(__dirname, '../../../.env'),
+    resolve(__dirname, '../../../.env.local'),
+    resolve(__dirname, '../.env'),
+    resolve(__dirname, '../.env.local'),
+  ];
+  for (const filePath of candidates) {
+    if (!existsSync(filePath)) continue;
+    const raw = readFileSync(filePath, 'utf8');
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx <= 0) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (process.env[key] === undefined && val.length > 0) {
+        process.env[key] = val;
+      }
+    }
+  }
+}
 
 async function isEngineHealthy(url: string): Promise<boolean> {
   try {
@@ -50,6 +78,7 @@ async function maybeStartPythonEngine(engineUrl: string): Promise<ChildProcess |
 }
 
 async function main() {
+  loadOptionalEnvFiles();
   const mode = process.argv[2] ?? 'dev';
   const port = process.env.PORT ?? '3000';
   const engineUrl = process.env.ENGINE_URL ?? 'http://127.0.0.1:8000';
@@ -70,6 +99,7 @@ async function main() {
         ...process.env,
         DATABASE_URL: pgHandle.url,
         ENGINE_URL: engineUrl,
+        SENTINEL_LOCAL_BOOT: '1',
       },
       shell: process.platform === 'win32',
     },

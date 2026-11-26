@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { withSystemDb } from '@/db';
 import { pushSubscriptions } from '@/db/schema';
+import { resolveVapidConfig } from '@/lib/alerts/env-config';
 import { requireSession } from '@/lib/session';
 
 const SubscribeSchema = z.object({
@@ -17,10 +18,11 @@ export async function GET() {
   const authRes = await requireSession();
   if (authRes.error) return authRes.error;
 
-  const pubKey = process.env.VAPID_PUBLIC_KEY ?? null;
+  const vapid = resolveVapidConfig();
   return NextResponse.json({
-    vapidConfigured: Boolean(pubKey && process.env.VAPID_PRIVATE_KEY),
-    vapidPublicKey: pubKey,
+    vapidConfigured: Boolean(vapid.publicKey && vapid.privateKey),
+    vapidPublicKey: vapid.publicKey,
+    source: vapid.source,
   });
 }
 
