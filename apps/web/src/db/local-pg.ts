@@ -10,8 +10,8 @@ export interface LocalPgHandle {
   stop: () => Promise<void>;
 }
 
-async function canConnect(connectionString: string): Promise<boolean> {
-  const client = new Client({ connectionString, connectionTimeoutMillis: 1500 });
+async function canConnect(connectionString: string, timeoutMs = 1500): Promise<boolean> {
+  const client = new Client({ connectionString, connectionTimeoutMillis: timeoutMs });
   try {
     await client.connect();
     await client.query('SELECT 1');
@@ -30,7 +30,7 @@ async function canConnect(connectionString: string): Promise<boolean> {
  */
 export async function ensurePostgresRunning(preferredPort = 5433): Promise<LocalPgHandle> {
   const configuredUrl = process.env.DATABASE_URL;
-  if (configuredUrl && (await canConnect(configuredUrl))) {
+  if (configuredUrl && (await canConnect(configuredUrl, 12000))) {
     return {
       url: configuredUrl,
       stop: async () => {},

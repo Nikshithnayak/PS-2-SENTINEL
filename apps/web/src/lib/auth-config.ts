@@ -25,9 +25,15 @@ export interface PublicAuthProvidersStatus {
 export function resolveGoogleAuthConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): GoogleAuthConfig {
+  const vercelUrl = env.VERCEL_PROJECT_PRODUCTION_URL?.trim()
+    ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL.trim()}`
+    : env.VERCEL_URL?.trim()
+      ? `https://${env.VERCEL_URL.trim()}`
+      : '';
   const baseUrl = (
     env.BETTER_AUTH_URL?.trim() ||
     env.NEXT_PUBLIC_APP_URL?.trim() ||
+    vercelUrl ||
     'http://localhost:3000'
   ).replace(/\/$/, '');
 

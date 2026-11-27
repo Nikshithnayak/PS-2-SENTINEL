@@ -18,6 +18,10 @@ export function createSentinelAuth(
   const trustedOrigins = Array.from(
     new Set([
       googleCfg.baseUrl,
+      ...(env.VERCEL_PROJECT_PRODUCTION_URL?.trim()
+        ? [`https://${env.VERCEL_PROJECT_PRODUCTION_URL.trim()}`]
+        : []),
+      ...(env.VERCEL_URL?.trim() ? [`https://${env.VERCEL_URL.trim()}`] : []),
       'http://localhost:3000',
       'http://127.0.0.1:3000',
       'http://localhost:3100',

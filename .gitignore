@@ -15,6 +15,7 @@ venv/
 
 # Build & Framework artifacts
 .next/
+.vercel/
 out/
 dist/
 build/
