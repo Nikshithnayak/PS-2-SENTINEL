@@ -1,19 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --bg-base: #f4f8f7;
+  --bg-base: #f1f7fa;
   --bg-surface: #ffffff;
-  --bg-rail: #e8f3f0;
-  --bg-mint-panel: #e1f2ec;
-  --bg-elevated: #eff6f4;
-  --border-subtle: #d2e2dd;
-  --text-primary: #0f2928;
-  --text-muted: #425e5b;
-  --brand-primary: #0f766e;
+  --bg-rail: #d5efec;
+  --bg-mint-panel: #cbeae5;
+  --bg-elevated: #e3eef5;
+  --border-subtle: #c4dde2;
+  --text-primary: #0f293a;
+  --text-muted: #3b586a;
+  --brand-primary: #1b3c53;
   --brand-primary-fg: #ffffff;
-  --brand-rail-active: #0f3d4c;
+  --brand-rail-active: #1b3c53;
   --brand-rail-active-fg: #ffffff;
-  --brand-accent-text: #0f5d56;
+  --brand-secondary: #3b8a97;
+  --brand-accent-text: #164e63;
+  --sleep-accent: #5b52b8;
+  --sleep-bg: #ececf9;
 
   --status-stable: #047857;
   --status-stable-bg: #ecfdf5;
@@ -29,23 +32,26 @@
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --card-shadow: 0 1px 3px rgba(15, 61, 76, 0.04), 0 8px 20px -12px rgba(15, 61, 76, 0.08);
+  --card-shadow: 0 2px 6px rgba(27, 60, 83, 0.05), 0 10px 24px -12px rgba(27, 60, 83, 0.1);
 }
 
 .dark {
-  --bg-base: #0b1117;
-  --bg-surface: #121b24;
-  --bg-rail: #0f1922;
-  --bg-mint-panel: #13252a;
-  --bg-elevated: #1a2633;
-  --border-subtle: #263545;
+  --bg-base: #0b1218;
+  --bg-surface: #111d26;
+  --bg-rail: #0e1921;
+  --bg-mint-panel: #142830;
+  --bg-elevated: #182a36;
+  --border-subtle: #243b49;
   --text-primary: #f8fafc;
   --text-muted: #94a3b8;
-  --brand-primary: #2dd4bf;
+  --brand-primary: #5eead4;
   --brand-primary-fg: #042f2e;
-  --brand-rail-active: #2dd4bf;
+  --brand-rail-active: #5eead4;
   --brand-rail-active-fg: #042f2e;
+  --brand-secondary: #38bdf8;
   --brand-accent-text: #5eead4;
+  --sleep-accent: #a5b4fc;
+  --sleep-bg: #1e2140;
 
   --status-stable: #34d399;
   --status-stable-bg: #052e23;
@@ -57,7 +63,7 @@
   --status-urgent-bg: #3b0d0d;
   --status-synthetic: #38bdf8;
   --status-synthetic-bg: #0c2b3e;
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  --card-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 @theme inline {

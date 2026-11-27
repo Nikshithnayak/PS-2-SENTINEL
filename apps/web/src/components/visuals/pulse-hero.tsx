@@ -63,15 +63,15 @@ export function PulseHeroVisual() {
       {showShader ? (
         <div data-testid="pulse-webgl-canvas" className="absolute inset-0">
           <MeshGradient
-            colors={['#0F766E', '#115E59', '#FAF8F4', '#D97706']}
+            colors={['#1B3C53', '#3B8A97', '#CBEAE5', '#F1F7FA']}
             speed={inView ? 0.25 : 0}
-            style={{ width: '100%', height: '100%', opacity: 0.32 }}
+            style={{ width: '100%', height: '100%', opacity: 0.34 }}
           />
         </div>
       ) : (
         <div
           data-testid="pulse-static-fallback"
-          className="absolute inset-0 bg-gradient-to-br from-[var(--status-stable-bg)] via-[var(--bg-surface)] to-[var(--bg-elevated)]"
+          className="absolute inset-0 bg-gradient-to-br from-[var(--bg-mint-panel)] via-[var(--bg-surface)] to-[var(--bg-elevated)]"
         />
       )}
 

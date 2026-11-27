@@ -89,6 +89,12 @@ export function ActivityRingCard({
               role="img"
               aria-label={`${todaySteps.toLocaleString()} steps in last 24h, ${pct}% of ${targetSteps.toLocaleString()} personal baseline`}
             >
+              <defs>
+                <linearGradient id="sentinelActivityGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="var(--brand-secondary)" />
+                  <stop offset="100%" stopColor="var(--brand-primary)" />
+                </linearGradient>
+              </defs>
               <circle
                 cx="80"
                 cy="80"
@@ -102,7 +108,7 @@ export function ActivityRingCard({
                 cy="80"
                 r={radius}
                 fill="transparent"
-                stroke="var(--brand-primary)"
+                stroke="url(#sentinelActivityGrad)"
                 strokeWidth="14"
                 strokeLinecap="round"
                 strokeDasharray={circumference}

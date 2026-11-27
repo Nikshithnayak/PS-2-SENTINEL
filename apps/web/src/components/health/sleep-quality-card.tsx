@@ -69,7 +69,7 @@ export function SleepQualityCard({
     <article className="clinical-card p-5 sm:p-6">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-mint-panel)] text-[var(--brand-primary)]">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--sleep-bg)] text-[var(--sleep-accent)]">
             <Moon className="h-4 w-4" aria-hidden="true" />
           </span>
           <div>
@@ -113,21 +113,21 @@ export function SleepQualityCard({
               >
                 <defs>
                   <linearGradient id="sentinelSleepFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="var(--brand-primary)" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="var(--brand-primary)" stopOpacity="0.02" />
+                    <stop offset="0%" stopColor="var(--sleep-accent)" stopOpacity="0.28" />
+                    <stop offset="100%" stopColor="var(--sleep-accent)" stopOpacity="0.02" />
                   </linearGradient>
                 </defs>
                 <path d={areaPath} fill="url(#sentinelSleepFill)" />
                 <path
                   d={linePath}
                   fill="none"
-                  stroke="var(--brand-primary)"
+                  stroke="var(--sleep-accent)"
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
                 {coords.map((c) => (
-                  <circle key={c.label} cx={c.x} cy={c.y} r="3" fill="var(--brand-primary)" />
+                  <circle key={c.label} cx={c.x} cy={c.y} r="3" fill="var(--sleep-accent)" />
                 ))}
               </svg>
               <div className="mt-1 flex justify-between font-[family-name:var(--font-mono)] text-[11px] text-[var(--text-muted)]">

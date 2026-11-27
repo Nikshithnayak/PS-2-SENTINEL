@@ -4,8 +4,8 @@
   "description": "Wearable early health awareness for elderly care — personal baselines, calm alerts, and caregiver escalation.",
   "start_url": "/today",
   "display": "standalone",
-  "background_color": "#FAF8F4",
-  "theme_color": "#0F766E",
+  "background_color": "#F1F7FA",
+  "theme_color": "#1B3C53",
   "icons": [
     {
       "src": "/icon.svg",

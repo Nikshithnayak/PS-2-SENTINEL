@@ -80,11 +80,11 @@ export function VitalsChart({
       markLineData.push({
         name: 'Personal Median',
         yAxis: medianVal,
-        lineStyle: { color: '#047857', type: 'dashed', width: 1.5 },
+        lineStyle: { color: '#3b8a97', type: 'dashed', width: 1.5 },
         label: {
           position: 'insideEndTop',
           formatter: `Normal ${medianVal}${unit ? ` ${unit}` : ''}`,
-          color: '#047857',
+          color: '#164e63',
           fontSize: 11,
         },
       });
@@ -131,10 +131,10 @@ export function VitalsChart({
       const isOut = hasBand && (p.value < bandLow! || p.value > bandHigh!);
       return isOut
         ? {
-            value: p.value,
-            itemStyle: { color: '#b45309', borderColor: '#ffffff', borderWidth: 1.5 },
-            symbolSize: 7,
-          }
+          value: p.value,
+          itemStyle: { color: '#b45309', borderColor: '#ffffff', borderWidth: 1.5 },
+          symbolSize: 7,
+        }
         : p.value;
     });
 
@@ -142,8 +142,8 @@ export function VitalsChart({
       animation: false,
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(15, 41, 40, 0.94)',
-        borderColor: '#0f766e',
+        backgroundColor: 'rgba(27, 60, 83, 0.96)',
+        borderColor: '#3b8a97',
         textStyle: { color: '#f8fafc', fontSize: 12 },
         valueFormatter: (val) => `${val}${unit ? ` ${unit}` : ''}`,
       },
@@ -151,9 +151,9 @@ export function VitalsChart({
       xAxis: {
         type: 'category',
         data: times,
-        axisLine: { lineStyle: { color: '#cbd5e1' } },
+        axisLine: { lineStyle: { color: '#c4dde2' } },
         axisLabel: {
-          color: '#425e5b',
+          color: '#3b586a',
           fontSize: 11,
           formatter: (val: string) => {
             const d = new Date(val);
@@ -165,35 +165,35 @@ export function VitalsChart({
         type: 'value',
         scale: true,
         name: unit,
-        nameTextStyle: { color: '#425e5b', fontSize: 11 },
-        splitLine: { lineStyle: { color: 'rgba(15, 118, 110, 0.08)' } },
-        axisLabel: { color: '#425e5b', fontSize: 11 },
+        nameTextStyle: { color: '#3b586a', fontSize: 11 },
+        splitLine: { lineStyle: { color: 'rgba(27, 60, 83, 0.08)' } },
+        axisLabel: { color: '#3b586a', fontSize: 11 },
       },
       dataZoom: compact
         ? [{ type: 'inside', start: 0, end: 100 }]
         : [
-            { type: 'inside', start: 0, end: 100 },
-            { type: 'slider', start: 0, end: 100, height: 22, bottom: 8 },
-          ],
+          { type: 'inside', start: 0, end: 100 },
+          { type: 'slider', start: 0, end: 100, height: 22, bottom: 8 },
+        ],
       series: [
         {
           name: `Actual ${title}`,
           type: 'line',
-          smooth: 0.25,
+          smooth: 0.28,
           showSymbol: points.length <= 48,
           data: seriesData,
-          lineStyle: { color: '#0f3d4c', width: 2.5 },
-          itemStyle: { color: '#0f3d4c' },
+          lineStyle: { color: '#1b3c53', width: 2.5 },
+          itemStyle: { color: '#1b3c53' },
           areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(15, 118, 110, 0.14)' },
-              { offset: 1, color: 'rgba(15, 118, 110, 0.01)' },
+              { offset: 0, color: 'rgba(59, 138, 151, 0.22)' },
+              { offset: 1, color: 'rgba(59, 138, 151, 0.01)' },
             ]),
           },
           markArea: hasBand
             ? {
                 silent: true,
-                itemStyle: { color: 'rgba(4, 120, 87, 0.11)' },
+                itemStyle: { color: 'rgba(82, 163, 158, 0.14)' },
                 data: [[{ yAxis: bandLow! }, { yAxis: bandHigh! }]],
               }
             : undefined,
@@ -207,8 +207,8 @@ export function VitalsChart({
                 type: 'line' as const,
                 showSymbol: false,
                 data: baselineSeries,
-                lineStyle: { color: '#047857', width: 1.5, type: 'dashed' as const },
-                itemStyle: { color: '#047857' },
+                lineStyle: { color: '#4b9a9b', width: 1.75, type: 'dashed' as const },
+                itemStyle: { color: '#4b9a9b' },
                 silent: true,
               },
             ]
