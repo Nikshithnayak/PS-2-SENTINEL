@@ -323,54 +323,58 @@ export async function runAndPersistEvaluation(params: {
     reason: e.reason,
   }));
 
-  const engineUrl = process.env.ENGINE_URL ?? 'http://127.0.0.1:8000';
+  const configuredEngineUrl = process.env.ENGINE_URL?.trim();
+  const engineUrl = configuredEngineUrl ?? 'http://127.0.0.1:8000';
+  const shouldAttemptRemoteEngine = Boolean(configuredEngineUrl || !process.env.VERCEL);
   const approxAge = ageBandToApproxAge(dbInput.profile.ageBand);
   let evaluated: EngineEvaluationResult | null = null;
 
-  try {
-    const resp = await fetch(`${engineUrl}/v1/score/evaluate`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        patientId,
-        samples: payloadSamples,
-        conditions: dbInput.profile.conditionModules,
-        age: approxAge,
-        exclusions: payloadExclusions,
-        environment: dbInput.environment
-          ? {
-              apparentTempC: dbInput.environment.apparentTempC,
-              heatRiskLevel: dbInput.environment.heatRiskLevel,
-              pm25: dbInput.environment.pm25,
-            }
-          : null,
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (resp.ok) {
-      const py = (await resp.json()) as Omit<
-        EngineEvaluationResult,
-        'engineSource' | 'explanationKn' | 'explanationHi'
-      >;
-      const localized = buildLocalizedSummaries(
-        py.level,
-        py.contributions.map((c) => c.label),
-        py.baseline.validDays,
-        py.summaryText,
-      );
-      evaluated = {
-        ...py,
-        engineSource: 'python-engine',
-        explanationKn: localized.kn,
-        explanationHi: localized.hi,
-      };
-    } else {
-      const errText = await resp.text().catch(() => '');
-      console.warn(`[sentinel-engine] Python /v1/score/evaluate returned HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+  if (shouldAttemptRemoteEngine) {
+    try {
+      const resp = await fetch(`${engineUrl}/v1/score/evaluate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          patientId,
+          samples: payloadSamples,
+          conditions: dbInput.profile.conditionModules,
+          age: approxAge,
+          exclusions: payloadExclusions,
+          environment: dbInput.environment
+            ? {
+                apparentTempC: dbInput.environment.apparentTempC,
+                heatRiskLevel: dbInput.environment.heatRiskLevel,
+                pm25: dbInput.environment.pm25,
+              }
+            : null,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (resp.ok) {
+        const py = (await resp.json()) as Omit<
+          EngineEvaluationResult,
+          'engineSource' | 'explanationKn' | 'explanationHi'
+        >;
+        const localized = buildLocalizedSummaries(
+          py.level,
+          py.contributions.map((c) => c.label),
+          py.baseline.validDays,
+          py.summaryText,
+        );
+        evaluated = {
+          ...py,
+          engineSource: 'python-engine',
+          explanationKn: localized.kn,
+          explanationHi: localized.hi,
+        };
+      } else {
+        const errText = await resp.text().catch(() => '');
+        console.warn(`[sentinel-engine] Python /v1/score/evaluate returned HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+      }
+    } catch (err) {
+      console.warn('[sentinel-engine] Python evaluation fetch failed, using TS fallback:', err);
+      evaluated = null;
     }
-  } catch (err) {
-    console.warn('[sentinel-engine] Python evaluation fetch failed, using TS fallback:', err);
-    evaluated = null;
   }
 
   if (!evaluated) {

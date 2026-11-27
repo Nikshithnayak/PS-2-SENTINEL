@@ -14,16 +14,17 @@ SENTINEL respects open-source and open-data licenses. Where published packages e
 | [medplum/medplum](https://github.com/medplum/medplum) (`@medplum/fhirtypes`) | Medplum | Apache-2.0 | Installed package `@medplum/fhirtypes` for FHIR R4 `Patient`, `Observation`, `Flag`, `Bundle` export |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | Next Level Builder | MIT | Design intelligence query script used to establish healthcare accessibility & typography system |
 | [nexu-io/open-design](https://github.com/nexu-io/open-design) | Nexu / OpenDesign | Apache-2.0 | `DESIGN.md` portable design system structure and design-review checklist |
-| [garrytan/gstack](https://github.com/garrytan/gstack) | Garry Tan | MIT | Engineering process adapted into `.agents/workflows/` (`office-hours`, `ceo-review`, `eng-review`) & `DESIGN.md` frontmatter format |
+| [garrytan/gstack](https://github.com/garrytan/gstack) | Garry Tan | MIT | Engineering process workflows & `DESIGN.md` frontmatter format |
 | [motiondivision/motion](https://github.com/motiondivision/motion) | Motion B.V. | MIT | Installed `motion` npm package for accessible reduced-motion-aware UI transitions |
 | [ruucm/shadergradient](https://github.com/ruucm/shadergradient) | ruucm | MIT | Installed `@shadergradient/react` for lazy-loaded landing hero & subtle patient status aura |
 | [pmndrs/react-three-fiber](https://github.com/pmndrs/react-three-fiber) | Poimandres | MIT | Installed `@react-three/fiber` + `three` for landing-page 3D pulse waveform visual |
 | [dashersw/liquid-glass-js](https://github.com/dashersw/liquid-glass-js) | Armagan Amcalar | MIT | Design pattern reference for floating glass navigation/sheets/toasts |
 | [paper-design/shaders](https://github.com/paper-design/shaders) (`@paper-design/shaders-react`) | Paper Design | Apache-2.0 | Optional Apache-2.0 shader package; note `paper-design/liquid-logo` demo repo (PolyForm Shield 1.0.0) is **NOT** copied or redistributed |
 | [21st-dev/magic-mcp](https://github.com/21st-dev/magic-mcp) | 21st.dev | ISC | UI component prototyping workflow reference |
-| [rmyndharis/antigravity-skills](https://github.com/rmyndharis/antigravity-skills) | Yudhi Armyndharis & Seth Hobson | MIT | Source skills distilled into `.agents/skills/` |
-| [msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents) | AgentLand Contributors | MIT | Role specialist guidance distilled into `.agents/skills/` |
+| [rmyndharis/antigravity-skills](https://github.com/rmyndharis/antigravity-skills) | Yudhi Armyndharis & Seth Hobson | MIT | Design-time ML engineering & architectural checklist reference |
+| [msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents) | AgentLand Contributors | MIT | Design-time role specialist review guidelines |
 | [Pythoughts-labs/react-frontend-skills](https://github.com/Pythoughts-labs/react-frontend-skills) | Mohamed Elkholy (PyModel) | MIT | Next.js 16 / React 19 / TanStack Query / Playwright patterns |
+| [HuggingFace Transformers.js](https://github.com/huggingface/transformers.js) (`@huggingface/transformers`) | Hugging Face | Apache-2.0 | On-device browser OpenAI Whisper speech transcription worker |
 | [public-apis/public-apis](https://github.com/public-apis/public-apis) | public-apis Contributors | MIT | Free API catalog reference (Open-Meteo, RxNorm, openFDA, Nominatim/OpenStreetMap) |
 | [ripienaar/free-for-dev](https://github.com/ripienaar/free-for-dev) | R.I. Pienaar & Contributors | Public Repo | Free-tier deployment architecture research |
 | [greatfrontend/awesome-front-end-system-design](https://github.com/greatfrontend/awesome-front-end-system-design) | GreatFrontEnd | MIT | RADIO framework for frontend system design documentation |

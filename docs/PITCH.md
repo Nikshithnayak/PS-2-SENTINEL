@@ -1,36 +1,33 @@
-# 3-Minute Demo Script — Sachet · SENTINEL
+# 3-Minute Walkthrough Guide — Sachet · SENTINEL
 
 > **Problem Statement:** S2 · Nitte Pharma Innovation Centre — Wearable-Based Early Health Deterioration System  
 > **Non-Diagnostic Framing:** *"Changes from your personal normal"* · Default India Emergency Safety: `112` / `108`
 
 ---
 
-## Setup Checklist Before Opening Screen
-1. Start local stack: `pnpm --filter @sentinel/web dev` (auto-starts embedded PostgreSQL + Python FastAPI engine + Next.js on `http://localhost:3000`).
-2. Seeded demo credentials (Password for all accounts: `SentinelDemo#2026`):
-   - **Patient (Elder):** `ramesh@sentinel.local` (Ramesh Pai, 72, Mangaluru)
-   - **Primary Caregiver:** `kavitha@sentinel.local` (Kavitha Pai)
-   - **Clinician:** `dr.shetty@sentinel.local` (Dr. Arvind Shetty)
-   - **Research Admin:** `research@sentinel.local` (Nitte Pharma R&D)
+## Setup Checklist Before Live Walkthrough
+1. Open live production (`https://ps-2-sentinel.vercel.app`) or start locally (`pnpm --filter @sentinel/web dev` for PostgreSQL + FastAPI engine + Next.js on `http://localhost:3000`).
+2. Create or sign in with real **Patient**, **Caregiver**, and **Clinician** accounts on `/auth` (via **Continue with Google** or Email Sign Up) and connect them via `/settings/consent` Care Circle invites.
 
 ---
 
-## Minute 0:00–0:45 — Problem & Elder Simplicity (`/today` + `/`)
-1. Open `/` (`http://localhost:3000`): point out warm editorial healthcare readability (`DESIGN.md`), single restrained ambient pulse ribbon with `prefers-reduced-motion` safety, and live PostgreSQL RLS + Hash-Chained Audit Ledger status cards.
-2. Sign in as **Ramesh Pai** on `/auth` and visit `/today`:
-   - Highlight **Elder Mode**: >=18px type, >=56px touch buttons, non-diagnostic copy, one-tap **"I Feel Okay" / "Not Feeling Well"**, `"Read Aloud"` speech synthesis, and live switch to **ಕನ್ನಡ** or **हिन्दी**.
-   - Show the **Voice Check-In Companion** & **Today's Medication Check** (RxNorm-verified beta blocker tracking).
+## Minute 0:00–0:45 — Problem & Elder Simplicity (`/today` + Voice Companion)
+1. Open `/`: warm light-mode healthcare design (`DESIGN.md`), single restrained ambient pulse visual with `prefers-reduced-motion` safety, and live PostgreSQL RLS + Hash-Chained Audit Ledger status.
+2. Sign in as a **Patient (`Elder Care View`)** on `/today`:
+   - Highlight **Elder Mode**: >=18px type, >=48px touch buttons, non-diagnostic copy, one-tap **"I Feel Okay" / "Not Feeling Well"**, `"Read Aloud"` speech synthesis, and live **EN / ಕನ್ನಡ / हिन्दी** switching.
+   - Show the **Wispr-Powered Voice Check-In Companion** (`Auto` / on-device Open-Source Whisper AI): natural greetings (`"Hello!"`), everyday symptom questions, filler cleanup, live audio waveform, and **Today's Medication Check** (RxNorm-verified beta-blocker awareness).
 
-## Minute 0:45–1:45 — Ingestion, Personal Baseline & Why Generic Thresholds Miss Deterioration (`/ingest` & `/eval`)
-1. Open `/ingest`: demonstrate streaming Apple Health `export.xml`, CSV column mapper, single-show API key creation, and explicit `SYNTHETIC` badging.
-2. Select **`early_infection`**, click **Generate Synthetic Series**, then click **Run Detection Engine**:
-   - Point out exact observed behavior: **Partial NEWS2 = `0 pts`** (fixed clinical threshold misses early prodrome!), while SENTINEL's personal baseline catches **`Deterioration Index ~68–70 (WARNING)`** because Resting HR, Breathing Rate, HRV, and Skin Temp shifted together relative to Ramesh's own 15+ day personal normal.
-3. Open `/eval` and run the live causal walk-forward benchmark: compare `fixed_clinical_only` vs `L1_L2_L3_full` across all 11 scenarios (including `copd_exacerbation` Scale 2 and zero false alarms on `exercise_confounder`).
+## Minute 0:45–1:45 — Direct Watch / Phone Sync & Personal Baseline (`/ingest` & `/eval`)
+1. Open `/ingest`:
+   - Connect directly via **1-Click Google Fit / Google Health OAuth**, **Android Health Connect QR Link** (HC Webhook JSON), or **Direct Bluetooth Watch (BLE `0x180D`)** — zero manual CSV downloads needed.
+   - Historical Apple Health `export.xml`, Google Takeout JSON, and custom CSV importers remain available below for longitudinal backfill.
+2. Click **Run Detection Engine** (or evaluate from `/alerts`): point out how **Partial NEWS2** may still read `0 pts` on generic cutoffs while SENTINEL's personal shrinkage baseline detects multi-signal shifts across Resting HR, Breathing Rate, HRV, and Skin Temp early.
+3. Show `/eval` Model Card & dataset adapters (`PMData`, `LifeSnaps`, `WESAD`, `MMASH`).
 
-## Minute 1:45–2:30 — Anti-Fatigue Caregiver Escalation & Bidirectional Replies (`/alerts` & `/caregiver`)
-1. Open `/alerts`: point out live `EventSource` SSE badge, Quiet Hours / Daily Budget controls, India `112` / `108` safety card + Mangaluru/Nitte hospitals list, and idempotent outbox receipts (`in_app`, `email`, `web_push`, `ntfy`, `telegram`, gated `sms_flag`).
-2. Demonstrate Cloudflare Agentic Inbox reply workflow (`OK`, `CALL ME`, `SNOOZE`) via the reply buttons, updating alert state instantaneously over live SSE in Kavitha's Caregiver Console (`/caregiver`).
+## Minute 1:45–2:30 — Anti-Fatigue Caregiver Escalation (`/caregiver` & `/alerts`)
+1. Sign in as the linked **Caregiver (`Caregiver Monitor`)**: notice the dedicated Caregiver navigation & workspace showing elder status, recent voice check-in transcripts, live SSE updates, quiet hours/budget controls, India `112` / `108` safety card + nearby hospitals, and instant **Acknowledge / Snooze / Escalate**.
+2. Inbound Cloudflare Email / Telegram reply commands (`OK`, `CALL ME`, `SNOOZE`) update alert state in real time via SSE.
 
-## Minute 2:30–3:00 — Clinician Triage, Quarantine & Privacy Exports (`/clinician`, `/signals`, `/settings`)
-1. Switch to **Dr. Arvind Shetty** (`/clinician`): inspect Cohort Triage ranking, zoomable Apache ECharts Resting HR curve with shaded personal normal tolerance band (`normalLow..normalHigh`), Window-vs-Window delta, and the explicit 7-row **Partial NEWS2** breakdown (`unavailable_from_wearable` rows honestly shown).
-2. Click **PDF / FHIR** (`/clinician/report`) -> downloadable LOINC **FHIR R4 Bundle**, `/signals` contamination quarantine window, `/model-card` equity disclosures, and `/settings` DPDP Act 2023 JSON Export + Erasure.
+## Minute 2:30–3:00 — Clinician Triage, Quarantine & DPDP Privacy (`/clinician`, `/signals`, `/settings`)
+1. Sign in as the linked **Clinician (`Clinician Workstation`)**: inspect Cohort Triage ranking, zoomable Apache ECharts trajectories with shaded personal normal tolerance bands, Window-vs-Window deltas, and transparent 7-row **Partial NEWS2** breakdown (`unavailable_from_wearable` rows explicitly labeled).
+2. Export a printable summary & LOINC **FHIR R4 Bundle** (`/clinician/report`), inspect contamination quarantine windows (`/signals`), verify audit hash-chain integrity (`/settings/consent`), and download DPDP Act 2023 full JSON export (`/settings`).

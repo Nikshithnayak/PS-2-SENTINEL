@@ -3,7 +3,42 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": [
+        "DATABASE_URL",
+        "BETTER_AUTH_SECRET",
+        "BETTER_AUTH_URL",
+        "NEXT_PUBLIC_APP_URL",
+        "PHI_ENCRYPTION_KEY",
+        "ENGINE_URL",
+        "ENGINE_INTERNAL_TOKEN",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "GOOGLE_HEALTH_CLIENT_ID",
+        "GOOGLE_HEALTH_CLIENT_SECRET",
+        "OPEN_WEARABLES_URL",
+        "OPEN_WEARABLES_API_KEY",
+        "CLOUDFLARE_INBOX_WEBHOOK_SECRET",
+        "VAPID_PUBLIC_KEY",
+        "VAPID_PRIVATE_KEY",
+        "VAPID_SUBJECT",
+        "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
+        "NTFY_TOPIC_URL",
+        "RESEND_API_KEY",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_DEFAULT_CHAT_ID",
+        "GROQ_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+        "LLM_PHRASING_API_KEY",
+        "LLM_PHRASING_BASE_URL",
+        "LLM_PHRASING_MODEL",
+        "OLLAMA_BASE_URL",
+        "WHISPER_LOCAL_URL",
+        "VERCEL",
+        "VERCEL_URL",
+        "VERCEL_PROJECT_PRODUCTION_URL"
+      ]
     },
     "dev": {
       "cache": false,
