@@ -431,7 +431,10 @@ export async function maybeTriggerAlertFromEvaluation(params: {
     decision.effectiveLevel === 'urgent'
       ? ` If unresponsive or severe symptoms: call Emergency ${ctx.profile.emergencyNumber} or Ambulance ${ctx.profile.ambulanceNumber}.`
       : '';
-  const bodyText = `${evaluation.summaryText}${emergencyNote}`;
+  const summaryEn = evaluation.deviceSilent
+    ? 'No recent wearable readings synced — check watch battery, Bluetooth, or phone Health Connect sync.'
+    : `${evaluation.summaryText}${emergencyNote}`;
+  const bodyText = summaryEn;
 
   let alertId = decision.existingAlertId ?? null;
 
@@ -442,7 +445,7 @@ export async function maybeTriggerAlertFromEvaluation(params: {
         .set({
           level: decision.effectiveLevel,
           riskAssessmentId: evaluation.riskAssessmentId ?? null,
-          summaryEn: `${evaluation.summaryText}${emergencyNote}`,
+          summaryEn,
           summaryKn: evaluation.explanationKn,
           summaryHi: evaluation.explanationHi,
           escalationStep: initialStep,
@@ -473,7 +476,7 @@ export async function maybeTriggerAlertFromEvaluation(params: {
           alertType: evaluation.deviceSilent ? 'device_silent' : 'deterioration',
           level: decision.effectiveLevel,
           ruleKey,
-          summaryEn: `${evaluation.summaryText}${emergencyNote}`,
+          summaryEn,
           summaryKn: evaluation.explanationKn,
           summaryHi: evaluation.explanationHi,
           status: 'open',
@@ -553,8 +556,13 @@ export async function escalateAlerts(params: {
   actorUserId?: string | null;
 }): Promise<{ escalatedCount: number; alerts: Array<{ id: string; newStep: number }> }> {
   const now = new Date();
+  const isManualSingleTarget = Boolean(params.forceImmediate && params.alertId);
+  const eligibleStatuses = isManualSingleTarget
+    ? ['open', 'escalated', 'acknowledged', 'snoozed']
+    : ['open', 'escalated'];
+
   const candidates = await withSystemDb((tx) => {
-    const conds = [inArray(alerts.status, ['open', 'escalated'])];
+    const conds = [inArray(alerts.status, eligibleStatuses)];
     if (params.patientId) conds.push(eq(alerts.patientId, params.patientId));
     if (params.alertId) conds.push(eq(alerts.id, params.alertId));
     if (!params.forceImmediate) {
@@ -570,8 +578,8 @@ export async function escalateAlerts(params: {
   const moved: Array<{ id: string; newStep: number }> = [];
 
   for (const al of candidates) {
-    if (al.escalationStep >= 4) continue;
-    const nextStep = Math.min(4, al.escalationStep + 1);
+    if (al.escalationStep >= 4 && !isManualSingleTarget) continue;
+    const nextStep = al.escalationStep >= 4 ? 4 : Math.min(4, al.escalationStep + 1);
     const delayMin = escalationDelayMinutes(al.level as AlertLevel, nextStep + 1);
     const nextAt = nextStep < 4 ? new Date(now.getTime() + delayMin * 60_000) : null;
 
@@ -580,6 +588,7 @@ export async function escalateAlerts(params: {
         .update(alerts)
         .set({
           status: 'escalated',
+          snoozedUntil: null,
           escalationStep: nextStep,
           nextEscalationAt: nextAt,
           updatedAt: now,
@@ -642,7 +651,13 @@ export async function applyAlertAction(params: {
   note?: string;
   feedback?: 'helpful' | 'false_alarm' | 'expected_activity' | 'missed_symptom';
   snoozeMinutes?: number;
-}): Promise<{ alertId: string; status: string; updatedSensitivityOffset: number | null }> {
+}): Promise<{
+  alertId: string;
+  status: string;
+  escalationStep: number;
+  message: string;
+  updatedSensitivityOffset: number | null;
+}> {
   const now = new Date();
   const [alertRow] = await withSystemDb((tx) =>
     tx.select().from(alerts).where(eq(alerts.id, params.alertId)).limit(1),
@@ -657,9 +672,16 @@ export async function applyAlertAction(params: {
       forceImmediate: true,
       actorUserId: params.actorUserId,
     });
+    const nextStep = res.alerts[0]?.newStep ?? alertRow.escalationStep;
+    const status = res.escalatedCount > 0 ? 'escalated' : alertRow.status;
     return {
       alertId: alertRow.id,
-      status: res.escalatedCount > 0 ? 'escalated' : alertRow.status,
+      status,
+      escalationStep: nextStep,
+      message:
+        nextStep >= 4
+          ? 'Emergency Step 4 active — emergency escalation dispatched (call 112 / 108 if urgent).'
+          : `Alert escalated to Step ${nextStep}.`,
       updatedSensitivityOffset: null,
     };
   }
@@ -730,6 +752,13 @@ export async function applyAlertAction(params: {
   return {
     alertId: alertRow.id,
     status: newStatus,
+    escalationStep: alertRow.escalationStep,
+    message:
+      newStatus === 'snoozed'
+        ? `Alert snoozed for ${params.snoozeMinutes ?? 120} minutes.`
+        : newStatus === 'resolved'
+          ? 'Alert marked resolved.'
+          : 'Alert acknowledged and logged.',
     updatedSensitivityOffset: updatedOffset,
   };
 }

@@ -176,9 +176,11 @@ function fallbackEvaluateLocal(params: {
   );
   const stage = days >= 14 ? 'calibrated' : days >= 3 ? 'learning' : 'warming_prior';
   const summaryEn =
-    level === 'stable'
-      ? `Readings look consistent with your personal normal (${stage}).`
-      : 'Notable changes from your personal normal detected (TS fallback mode).';
+    samples.length === 0
+      ? 'No wearable samples synced yet — pair a watch or sync Google Fit / Health Connect.'
+      : level === 'stable'
+        ? `Readings look consistent with your personal normal (${stage}).`
+        : 'Notable changes from your personal normal detected (TS fallback mode).';
   const localized = buildLocalizedSummaries(level, ['Resting Heart Rate', 'SpO2'], days, summaryEn);
 
   return {

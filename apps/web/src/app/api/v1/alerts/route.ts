@@ -2,15 +2,21 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { and, desc, eq } from 'drizzle-orm';
 import { appendAuditLog, withSystemDb } from '@/db';
 import { alertDeliveries, alerts, patientProfiles } from '@/db/schema';
+import { getAccessiblePatientIds } from '@/lib/dashboard/queries';
 import { checkPatientScope, requireSession } from '@/lib/session';
 
-async function resolvePatientId(userId: string, requested?: string): Promise<string | null> {
+async function resolvePatientId(
+  ctx: Parameters<typeof getAccessiblePatientIds>[0],
+  requested?: string,
+): Promise<string | null> {
   if (requested) return requested;
+  const accessible = await getAccessiblePatientIds(ctx);
+  if (accessible[0]) return accessible[0];
   const rows = await withSystemDb((tx) =>
     tx
       .select({ id: patientProfiles.id })
       .from(patientProfiles)
-      .where(eq(patientProfiles.userId, userId))
+      .where(eq(patientProfiles.userId, ctx.userId))
       .limit(1),
   );
   return rows[0]?.id ?? null;
@@ -22,7 +28,7 @@ export async function GET(request: NextRequest) {
   const { ctx } = authRes;
 
   const patientId = await resolvePatientId(
-    ctx.userId,
+    ctx,
     request.nextUrl.searchParams.get('patientId') ?? undefined,
   );
   if (!patientId) {
@@ -82,7 +88,7 @@ export async function DELETE(request: NextRequest) {
   const { ctx } = authRes;
 
   const patientId = await resolvePatientId(
-    ctx.userId,
+    ctx,
     request.nextUrl.searchParams.get('patientId') ?? undefined,
   );
   if (!patientId) {

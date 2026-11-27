@@ -253,6 +253,39 @@ describe('Phase 4 Anti-Fatigue Policy, Escalation Ladder & Transactional Outbox'
     });
     expect(ack.status).toBe('acknowledged');
     expect(ack.updatedSensitivityOffset).toBe(-0.05);
+
+    // Snooze 2h from acknowledged state, then escalate Step 3 -> Step 4 and test Step 4 re-dispatch + resolve
+    const snoozed = await applyAlertAction({
+      alertId: res.alertId!,
+      actorUserId: SEED_IDS.caregiverUserId,
+      action: 'snooze',
+      snoozeMinutes: 120,
+    });
+    expect(snoozed.status).toBe('snoozed');
+
+    const esc4 = await applyAlertAction({
+      alertId: res.alertId!,
+      actorUserId: SEED_IDS.caregiverUserId,
+      action: 'escalate',
+    });
+    expect(esc4.status).toBe('escalated');
+    expect(esc4.escalationStep).toBe(4);
+
+    // Escalate again at Step 4 stays active (re-dispatching emergency step)
+    const esc4Repeat = await applyAlertAction({
+      alertId: res.alertId!,
+      actorUserId: SEED_IDS.caregiverUserId,
+      action: 'escalate',
+    });
+    expect(esc4Repeat.status).toBe('escalated');
+    expect(esc4Repeat.escalationStep).toBe(4);
+
+    const resolved = await applyAlertAction({
+      alertId: res.alertId!,
+      actorUserId: SEED_IDS.caregiverUserId,
+      action: 'resolve',
+    });
+    expect(resolved.status).toBe('resolved');
   });
 
   it('resolves unified alert & webhook env aliases matching SETUP-NEEDED.md and .env.example', () => {

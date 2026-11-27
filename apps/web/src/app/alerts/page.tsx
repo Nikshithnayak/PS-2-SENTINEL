@@ -37,6 +37,7 @@ interface AlertsResponse {
     summaryHi: string;
     status: string;
     escalationStep: number;
+    snoozedUntil?: string | null;
     nextEscalationAt: string | null;
     feedback: string | null;
     isSynthetic: boolean;
@@ -158,6 +159,7 @@ export default function AlertsOperationsPage() {
         body: JSON.stringify({
           action: vars.action,
           feedback: vars.feedback,
+          snoozeMinutes: vars.action === 'snooze' ? 120 : undefined,
         }),
       });
       const body = await res.json();
@@ -290,15 +292,30 @@ export default function AlertsOperationsPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {(alertsQuery.data?.alerts ?? []).map((al) => (
+                  {(alertsQuery.data?.alerts ?? []).map((al) => {
+                    const isResolved = al.status === 'resolved';
+                    const isAcked = al.status === 'acknowledged';
+                    const isSnoozed = al.status === 'snoozed';
+                    const isBusy =
+                      actionMutation.isPending && actionMutation.variables?.alertId === al.id;
+                    const activeAction = isBusy ? actionMutation.variables?.action : null;
+                    const levelBadgeClass =
+                      al.level === 'urgent'
+                        ? 'bg-[var(--status-urgent-bg)] text-[var(--status-urgent)]'
+                        : al.level === 'stable'
+                          ? 'bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
+                          : 'bg-[var(--status-watch-bg)] text-[var(--status-watch)]';
+                    return (
                     <article
                       key={al.id}
                       data-testid={`alert-card-${al.id}`}
-                      className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5"
+                      className={`rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 transition-opacity ${
+                        isResolved ? 'opacity-70' : ''
+                      }`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-[var(--status-watch-bg)] px-2.5 py-0.5 text-xs font-bold uppercase text-[var(--status-watch)]">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${levelBadgeClass}`}>
                             {al.level}
                           </span>
                           <span className="rounded-full border border-[var(--border-subtle)] px-2.5 py-0.5 text-xs font-semibold">
@@ -307,6 +324,15 @@ export default function AlertsOperationsPage() {
                           <span className="text-xs font-semibold text-[var(--brand-primary)]">
                             {STEP_LABELS[al.escalationStep] ?? `Step ${al.escalationStep}`}
                           </span>
+                          {isSnoozed && al.snoozedUntil && (
+                            <span className="rounded-full bg-[var(--bg-base)] px-2.5 py-0.5 text-xs font-medium text-[var(--text-muted)]">
+                              Snoozed until{' '}
+                              {new Date(al.snoozedUntil).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          )}
                           {al.isSynthetic && (
                             <span className="rounded-full bg-[var(--status-synthetic-bg)] px-2 py-0.5 text-xs font-bold text-[var(--status-synthetic)]">
                               SYNTHETIC
@@ -323,6 +349,7 @@ export default function AlertsOperationsPage() {
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           type="button"
+                          disabled={isBusy || isResolved}
                           onClick={() =>
                             actionMutation.mutate({
                               alertId: al.id,
@@ -330,33 +357,79 @@ export default function AlertsOperationsPage() {
                               feedback: 'helpful',
                             })
                           }
-                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--status-stable)] px-3 text-xs font-semibold text-white cursor-pointer"
+                          className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                            isAcked
+                              ? 'border border-[var(--status-stable)] bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
+                              : 'bg-[var(--status-stable)] text-white'
+                          }`}
                         >
                           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                          <span>Acknowledge (OK · Helpful)</span>
+                          <span>
+                            {activeAction === 'acknowledge'
+                              ? 'Saving…'
+                              : isAcked
+                                ? 'Re-acknowledge (OK · Helpful)'
+                                : 'Acknowledge (OK · Helpful)'}
+                          </span>
                         </button>
                         <button
                           type="button"
+                          disabled={isBusy || isResolved}
                           onClick={() =>
                             actionMutation.mutate({ alertId: al.id, action: 'snooze' })
                           }
-                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] px-3 text-xs font-semibold hover:bg-[var(--bg-elevated)] cursor-pointer"
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] px-3 text-xs font-semibold hover:bg-[var(--bg-elevated)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Clock className="h-4 w-4" aria-hidden="true" />
-                          <span>Snooze 2h</span>
+                          <span>
+                            {activeAction === 'snooze'
+                              ? 'Snoozing…'
+                              : isSnoozed
+                                ? 'Extend Snooze +2h'
+                                : 'Snooze 2h'}
+                          </span>
                         </button>
                         <button
                           type="button"
+                          disabled={isBusy || isResolved}
                           onClick={() =>
                             actionMutation.mutate({ alertId: al.id, action: 'escalate' })
                           }
-                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--status-watch)] px-3 text-xs font-semibold text-white cursor-pointer"
+                          className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                            al.escalationStep >= 4
+                              ? 'bg-[var(--status-urgent)]'
+                              : 'bg-[var(--status-watch)]'
+                          }`}
                         >
                           <TrendingUp className="h-4 w-4" aria-hidden="true" />
-                          <span>Escalate Step (CALL ME)</span>
+                          <span>
+                            {activeAction === 'escalate'
+                              ? 'Escalating…'
+                              : al.escalationStep >= 4
+                                ? 'Escalate Step (Re-alert 112)'
+                                : `Escalate Step (Step ${al.escalationStep + 1} · CALL ME)`}
+                          </span>
                         </button>
                         <button
                           type="button"
+                          disabled={isBusy || isResolved}
+                          onClick={() =>
+                            actionMutation.mutate({ alertId: al.id, action: 'resolve' })
+                          }
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] px-3 text-xs font-semibold hover:bg-[var(--bg-elevated)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                          <span>
+                            {activeAction === 'resolve'
+                              ? 'Resolving…'
+                              : isResolved
+                                ? 'Resolved'
+                                : 'Resolve'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBusy || isResolved}
                           onClick={() =>
                             actionMutation.mutate({
                               alertId: al.id,
@@ -364,14 +437,15 @@ export default function AlertsOperationsPage() {
                               feedback: 'false_alarm',
                             })
                           }
-                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] px-3 text-xs font-semibold hover:bg-[var(--bg-elevated)] cursor-pointer"
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] px-3 text-xs font-semibold hover:bg-[var(--bg-elevated)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <ShieldAlert className="h-4 w-4" aria-hidden="true" />
                           <span>Mark False Alarm</span>
                         </button>
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>

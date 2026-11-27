@@ -53,6 +53,7 @@ interface CaregiverDashboardData {
     level: string;
     status: string;
     escalationStep: number;
+    snoozedUntil?: string | null;
     summaryEn: string;
     isSynthetic: boolean;
     createdAt: string;
@@ -90,6 +91,7 @@ export default function CaregiverConsolePage() {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [sseLive, setSseLive] = useState(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const cohortQuery = useQuery<{ cohort: CohortRow[] }>({
     queryKey: ['clinician-cohort'],
@@ -142,7 +144,7 @@ export default function CaregiverConsolePage() {
   const ackMutation = useMutation({
     mutationFn: async (vars: {
       alertId: string;
-      action: 'acknowledge' | 'snooze' | 'escalate';
+      action: 'acknowledge' | 'snooze' | 'escalate' | 'resolve';
     }) => {
       const res = await fetch(`/api/v1/alerts/${vars.alertId}/ack`, {
         method: 'POST',
@@ -150,15 +152,27 @@ export default function CaregiverConsolePage() {
         body: JSON.stringify({
           action: vars.action,
           feedback: vars.action === 'acknowledge' ? 'helpful' : undefined,
+          snoozeMinutes: vars.action === 'snooze' ? 120 : undefined,
         }),
       });
-      if (!res.ok) throw new Error('Update failed');
-      return res.json();
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+        status?: string;
+        message?: string;
+      } | null;
+      if (!res.ok) throw new Error(body?.error ?? 'Alert action failed');
+      return body;
     },
     onSuccess: (data) => {
-      setFeedbackBanner(`Alert status updated to "${data.status}".`);
+      setErrorBanner(null);
+      setFeedbackBanner(
+        data?.message ?? `Alert status updated to "${data?.status ?? 'updated'}".`,
+      );
       qc.invalidateQueries({ queryKey: ['dashboard-patient', activePatientId] });
       qc.invalidateQueries({ queryKey: ['clinician-cohort'] });
+    },
+    onError: (err) => {
+      setErrorBanner(err instanceof Error ? err.message : 'Unable to update alert right now.');
     },
   });
 
@@ -196,6 +210,14 @@ export default function CaregiverConsolePage() {
           />
         ) : (
           <>
+            {errorBanner && (
+              <div
+                role="alert"
+                className="rounded-xl border border-[var(--status-urgent)] bg-[var(--status-urgent-bg)] px-4 py-3 text-sm font-semibold text-[var(--status-urgent)]"
+              >
+                {errorBanner}
+              </div>
+            )}
             {feedbackBanner && (
               <div
                 role="status"
@@ -334,55 +356,112 @@ export default function CaregiverConsolePage() {
                         {detailQuery.data.alerts.length === 0 ? (
                           <p className="text-sm text-[var(--text-muted)]">No alerts recorded.</p>
                         ) : (
-                          detailQuery.data.alerts.slice(0, 6).map((al) => (
-                            <div
-                              key={al.id}
-                              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4"
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                                <div className="flex items-center gap-2">
-                                  <StatusBadge level={al.level} />
-                                  <span className="font-[family-name:var(--font-mono)] font-semibold text-[var(--text-muted)]">
-                                    {al.status} · Step {al.escalationStep}
-                                  </span>
+                          detailQuery.data.alerts.slice(0, 6).map((al) => {
+                            const isResolved = al.status === 'resolved';
+                            const isAcked = al.status === 'acknowledged';
+                            const isSnoozed = al.status === 'snoozed';
+                            const isBusy =
+                              ackMutation.isPending && ackMutation.variables?.alertId === al.id;
+                            const activeAction = isBusy ? ackMutation.variables?.action : null;
+                            return (
+                              <div
+                                key={al.id}
+                                className={`rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4 transition-opacity ${
+                                  isResolved ? 'opacity-70' : ''
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <StatusBadge level={al.level} />
+                                    <span className="font-[family-name:var(--font-mono)] font-semibold text-[var(--text-muted)]">
+                                      {al.status} · Step {al.escalationStep}
+                                    </span>
+                                    {isSnoozed && al.snoozedUntil && (
+                                      <span className="rounded-full bg-[var(--bg-surface)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)]">
+                                        until{' '}
+                                        {new Date(al.snoozedUntil).toLocaleTimeString([], {
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                        })}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {al.isSynthetic && <SyntheticBadge />}
                                 </div>
-                                {al.isSynthetic && <SyntheticBadge />}
+                                <p className="mt-2 text-sm font-medium">{al.summaryEn}</p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={isBusy || isResolved}
+                                    onClick={() =>
+                                      ackMutation.mutate({ alertId: al.id, action: 'acknowledge' })
+                                    }
+                                    className={`inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      isAcked
+                                        ? 'border border-[var(--status-stable)] bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
+                                        : 'bg-[var(--status-stable)] text-white'
+                                    }`}
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                    {activeAction === 'acknowledge'
+                                      ? 'Saving…'
+                                      : isAcked
+                                        ? 'Re-acknowledge'
+                                        : 'Acknowledge'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy || isResolved}
+                                    onClick={() =>
+                                      ackMutation.mutate({ alertId: al.id, action: 'snooze' })
+                                    }
+                                    className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                                    {activeAction === 'snooze'
+                                      ? 'Snoozing…'
+                                      : isSnoozed
+                                        ? 'Extend Snooze +2h'
+                                        : 'Snooze 2h'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy || isResolved}
+                                    onClick={() =>
+                                      ackMutation.mutate({ alertId: al.id, action: 'escalate' })
+                                    }
+                                    className={`inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-xs font-semibold text-white cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      al.escalationStep >= 4
+                                        ? 'bg-[var(--status-urgent)]'
+                                        : 'bg-[var(--status-watch)]'
+                                    }`}
+                                  >
+                                    <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
+                                    {activeAction === 'escalate'
+                                      ? 'Escalating…'
+                                      : al.escalationStep >= 4
+                                        ? `Re-alert ${detailQuery.data.emergencyNumber}`
+                                        : `Escalate (Step ${al.escalationStep + 1})`}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy || isResolved}
+                                    onClick={() =>
+                                      ackMutation.mutate({ alertId: al.id, action: 'resolve' })
+                                    }
+                                    className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-xs font-semibold text-[var(--text-secondary)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
+                                    {activeAction === 'resolve'
+                                      ? 'Resolving…'
+                                      : isResolved
+                                        ? 'Resolved'
+                                        : 'Resolve'}
+                                  </button>
+                                </div>
                               </div>
-                              <p className="mt-2 text-sm font-medium">{al.summaryEn}</p>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    ackMutation.mutate({ alertId: al.id, action: 'acknowledge' })
-                                  }
-                                  className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--status-stable)] px-3 text-xs font-semibold text-white cursor-pointer"
-                                >
-                                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                                  Acknowledge
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    ackMutation.mutate({ alertId: al.id, action: 'snooze' })
-                                  }
-                                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-xs font-semibold cursor-pointer"
-                                >
-                                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                                  Snooze 2h
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    ackMutation.mutate({ alertId: al.id, action: 'escalate' })
-                                  }
-                                  className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--status-watch)] px-3 text-xs font-semibold text-white cursor-pointer"
-                                >
-                                  <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
-                                  Escalate
-                                </button>
-                              </div>
-                            </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
                     </div>
