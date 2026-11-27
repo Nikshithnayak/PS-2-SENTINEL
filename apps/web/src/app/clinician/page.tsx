@@ -171,9 +171,28 @@ export default function ClinicianDashboardPage() {
           workspaceName="Clinician Triage & Deep-Dive"
         >
         {isUnauth ? (
-          <SignedOutGate heading="Sign in to open Clinician View" />
+          <SignedOutGate
+            heading="Sign in to Clinician Workstation"
+            description="Independent clinical decision-support login for physicians, nurses, and authorized research staff."
+            signInHref="/clinician/login"
+            signInLabel="Open Clinician System Login"
+          />
         ) : (
           <>
+            {cohortQuery.isSuccess && (cohortQuery.data?.cohort ?? []).length === 0 && (
+              <div className="clinical-card p-6 text-sm">
+                <p className="font-bold text-[var(--text-primary)]">
+                  Clinician Workstation Active — awaiting patient consent grants
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  No patients have granted{' '}
+                  <code className="font-[family-name:var(--font-mono)]">clinician_export</code> or{' '}
+                  <code className="font-[family-name:var(--font-mono)]">vitals_read</code> consent to
+                  your clinical email yet. Patients can add you from their{' '}
+                  <strong>My Care Circle (/settings/consent)</strong> page.
+                </p>
+              </div>
+            )}
             {/* Consented Cohort Triage Table inside Mint Bento Frame */}
             <section className="mint-bento p-4 sm:p-5">
               <div className="clinical-card p-5">

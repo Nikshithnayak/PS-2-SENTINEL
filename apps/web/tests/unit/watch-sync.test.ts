@@ -35,7 +35,11 @@ import {
   DELETE as connectorDelete,
   GET as connectorStatusGet,
 } from '@/app/api/v1/connectors/google/status/route';
-import { saveEncryptedGoogleConnectorTokens } from '@/lib/ingestion/connectors/google-cloud-health';
+import { GET as googleConnectGet } from '@/app/api/v1/connectors/google/connect/route';
+import {
+  resolveGoogleConnectorOAuthConfig,
+  saveEncryptedGoogleConnectorTokens,
+} from '@/lib/ingestion/connectors/google-cloud-health';
 
 let pgHandle: LocalPgHandle;
 const originalFetch = globalThis.fetch;
@@ -420,5 +424,33 @@ describe('Universal Smartwatch Sync (BLE GATT, Webhook Normalizer, Cloud Bridges
       }),
     );
     expect(delRes.status).toBe(200);
+  });
+
+  it('routes Google Fit OAuth callback through /api/auth/callback/google with gfit_ state to prevent redirect_uri_mismatch', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+    const oauthCfg = resolveGoogleConnectorOAuthConfig('google_fit', 'https://ps-2-sentinel.vercel.app');
+    expect(oauthCfg.callbackUrl).toBe('https://ps-2-sentinel.vercel.app/api/auth/callback/google');
+
+    mockSession = {
+      userId: SEED_IDS.patientUserId,
+      email: 'ramesh@example.org',
+      name: 'Ramesh Pai',
+      role: 'patient',
+      locale: 'en',
+    };
+
+    const connectReq = new NextRequest('https://ps-2-sentinel.vercel.app/api/v1/connectors/google/connect?mode=fit', {
+      headers: { host: 'ps-2-sentinel.vercel.app', 'x-forwarded-proto': 'https' },
+    });
+    const connectRes = await googleConnectGet(connectReq);
+    expect(connectRes.status).toBe(307);
+    const location = connectRes.headers.get('location') ?? '';
+    const parsedUrl = new URL(location);
+    expect(parsedUrl.origin).toBe('https://accounts.google.com');
+    expect(parsedUrl.searchParams.get('redirect_uri')).toBe(
+      'https://ps-2-sentinel.vercel.app/api/auth/callback/google',
+    );
+    expect(parsedUrl.searchParams.get('state') ?? '').toMatch(/^gfit_/);
   });
 });

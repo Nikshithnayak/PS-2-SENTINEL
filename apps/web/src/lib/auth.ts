@@ -6,6 +6,18 @@ import * as schema from '@/db/schema';
 import { encryptPhi } from '@sentinel/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { resolveGoogleAuthConfig } from './auth-config';
+import { PORTAL_ROLE_COOKIE, verifyPortalRoleIntent, type PortalKind } from './auth-portal';
+
+async function readPendingPortalRole(env: NodeJS.ProcessEnv): Promise<PortalKind | null> {
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = await cookies();
+    const token = cookieStore.get(PORTAL_ROLE_COOKIE)?.value;
+    return verifyPortalRoleIntent(token, env);
+  } catch {
+    return null;
+  }
+}
 
 export function createSentinelAuth(
   env: NodeJS.ProcessEnv = process.env,
@@ -103,12 +115,45 @@ export function createSentinelAuth(
       user: {
         create: {
           after: async (createdUser) => {
-            const role = (createdUser as { role?: string }).role ?? 'patient';
+            const rawRole = (createdUser as { role?: string }).role ?? 'patient';
             const locale = (createdUser as { locale?: string }).locale ?? 'en';
             const displayName =
               createdUser.name?.trim() || createdUser.email.split('@')[0] || 'Member';
+            const pendingPortalRole =
+              rawRole === 'patient' ? await readPendingPortalRole(env) : null;
+            const normalizedEmail = createdUser.email.trim().toLowerCase();
 
             await withSystemDb(async (tx) => {
+              const pendingInvites = await tx
+                .select()
+                .from(schema.careCircleMembers)
+                .where(
+                  and(
+                    eq(schema.careCircleMembers.invitedEmail, normalizedEmail),
+                    isNull(schema.careCircleMembers.memberUserId),
+                  ),
+                );
+
+              let role = rawRole;
+              if (rawRole === 'patient') {
+                if (pendingPortalRole === 'caregiver' || pendingPortalRole === 'clinician') {
+                  role = pendingPortalRole;
+                } else if (pendingInvites[0]) {
+                  role =
+                    pendingInvites[0].relationship === 'clinician' ||
+                    pendingInvites[0].relationship === 'researcher'
+                      ? 'clinician'
+                      : 'caregiver';
+                }
+              }
+
+              if (role !== rawRole) {
+                await tx
+                  .update(schema.user)
+                  .set({ role, updatedAt: new Date() })
+                  .where(eq(schema.user.id, createdUser.id));
+              }
+
               if (role === 'patient') {
                 const existing = await tx
                   .select({ id: schema.patientProfiles.id })
@@ -126,18 +171,6 @@ export function createSentinelAuth(
                   });
                 }
               }
-
-              // Link any pending Care Circle invitations addressed to this user's email
-              const normalizedEmail = createdUser.email.trim().toLowerCase();
-              const pendingInvites = await tx
-                .select()
-                .from(schema.careCircleMembers)
-                .where(
-                  and(
-                    eq(schema.careCircleMembers.invitedEmail, normalizedEmail),
-                    isNull(schema.careCircleMembers.memberUserId),
-                  ),
-                );
 
               for (const invite of pendingInvites) {
                 await tx

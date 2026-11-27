@@ -88,13 +88,17 @@ export function resolveGoogleConnectorOAuthConfig(
   const clientId = useDedicated ? dedicatedId : appId;
   const clientSecret = useDedicated ? dedicatedSecret : appSecret;
 
+  const explicitRedirect =
+    env.GOOGLE_CONNECTOR_REDIRECT_URI?.trim() ||
+    env.GOOGLE_FIT_REDIRECT_URI?.trim() ||
+    null;
   const normalizedOrigin = origin.replace(/\/$/, '');
   return {
     configured: Boolean(clientId && clientSecret),
     clientId,
     clientSecret,
     origin: normalizedOrigin,
-    callbackUrl: `${normalizedOrigin}/api/v1/connectors/google/callback`,
+    callbackUrl: explicitRedirect || `${normalizedOrigin}/api/auth/callback/google`,
   };
 }
 

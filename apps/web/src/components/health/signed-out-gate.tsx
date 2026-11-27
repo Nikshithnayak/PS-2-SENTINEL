@@ -6,9 +6,13 @@ import { Lock, ShieldCheck } from 'lucide-react';
 export function SignedOutGate({
   heading,
   description = 'Protected personal health summaries and care-circle workflows are isolated until you sign in.',
+  signInHref = '/auth',
+  signInLabel = 'Sign In to Continue',
 }: {
   heading: string;
   description?: string;
+  signInHref?: string;
+  signInLabel?: string;
 }) {
   return (
     <div className="clinical-card mx-auto max-w-xl p-8 text-center">
@@ -19,11 +23,11 @@ export function SignedOutGate({
       <p className="mt-2 text-sm text-[var(--text-muted)]">{description}</p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
         <Link
-          href="/auth"
+          href={signInHref}
           className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-6 text-base font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
         >
           <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-          <span>Sign In to Continue</span>
+          <span>{signInLabel}</span>
         </Link>
         <Link
           href="/"

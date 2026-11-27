@@ -188,7 +188,12 @@ export default function CaregiverConsolePage() {
           workspaceName="Caregiver Monitor"
         >
         {isUnauth ? (
-          <SignedOutGate heading="Sign in to access Caregiver Console" />
+          <SignedOutGate
+            heading="Sign in to access Caregiver Console"
+            description="Dedicated login for family members and caregivers monitoring a linked elder's alerts and baseline trends."
+            signInHref="/caregiver/login"
+            signInLabel="Open Caregiver Portal Login"
+          />
         ) : (
           <>
             {feedbackBanner && (
@@ -213,6 +218,19 @@ export default function CaregiverConsolePage() {
                   Manage Care Circle →
                 </Link>
               </div>
+              {cohortQuery.isSuccess && (cohortQuery.data?.cohort ?? []).length === 0 ? (
+                <div className="clinical-card p-5 text-sm">
+                  <p className="font-bold text-[var(--text-primary)]">
+                    Caregiver Monitor ready — no elders linked to this account yet
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Ask the patient / elder to sign into their Patient account, open{' '}
+                    <strong>My Care Circle (/settings/consent)</strong>, and invite your caregiver
+                    email. Once invited, their live alerts, vitals, and check-ins appear here
+                    automatically.
+                  </p>
+                </div>
+              ) : (
               <div className="flex flex-wrap gap-3">
                 {(cohortQuery.data?.cohort ?? []).map((p) => {
                   const selected = p.patientId === activePatientId;
@@ -235,6 +253,7 @@ export default function CaregiverConsolePage() {
                   );
                 })}
               </div>
+              )}
             </section>
 
             {detailQuery.data && (

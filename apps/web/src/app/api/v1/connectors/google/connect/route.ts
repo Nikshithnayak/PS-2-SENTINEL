@@ -45,13 +45,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const state = randomBytes(24).toString('base64url');
+  const state = `gfit_${randomBytes(24).toString('base64url')}`;
   const cookiePayload = JSON.stringify({
     state,
     userId: ctx.userId,
     patientId: scoped.patientId,
     mode,
     origin: oauthCfg.origin,
+    callbackUrl: oauthCfg.callbackUrl,
   });
 
   const redirectUrl = buildGoogleConnectorAuthUrl({

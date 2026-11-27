@@ -6,6 +6,7 @@ import type { Role } from '@sentinel/shared';
 import { Activity, BellRing, BookOpen, LogIn, Palette } from 'lucide-react';
 import { SyntheticBadge } from '@/components/health/status-badge';
 import { authClient } from '@/lib/auth-client';
+import { getPortalConfig, portalForRole } from '@/lib/auth-portal';
 import { getRoleWorkspaceConfig } from '@/lib/roles';
 
 export function SentinelShell({
@@ -25,6 +26,13 @@ export function SentinelShell({
   const { data: session } = authClient.useSession();
   const userRole = ((session?.user as { role?: Role } | undefined)?.role ?? 'patient') as Role;
   const workspace = getRoleWorkspaceConfig(userRole);
+  const authHref = session?.user
+    ? getPortalConfig(portalForRole(userRole)).loginPath
+    : pathname.startsWith('/caregiver')
+      ? '/caregiver/login'
+      : pathname.startsWith('/clinician')
+        ? '/clinician/login'
+        : '/auth';
 
   function isActivePath(href: string) {
     if (href === '/clinician' && pathname.startsWith('/clinician/report')) return false;
@@ -33,7 +41,7 @@ export function SentinelShell({
   }
 
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] text-[var(--text-primary)] pb-24 lg:pb-0 print:pb-0">
+    <div className="min-h-dvh overflow-x-clip bg-[var(--bg-base)] text-[var(--text-primary)] pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-0 print:pb-0">
       {/* Role-Specific Left Rail Navigation */}
       <aside
         aria-label="Primary sidebar navigation"
@@ -159,7 +167,7 @@ export function SentinelShell({
                 <BellRing className="h-4 w-4" aria-hidden="true" />
               </Link>
               <Link
-                href="/auth"
+                href={authHref}
                 className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--text-primary)] transition hover:bg-[var(--bg-elevated)] sm:text-sm"
               >
                 {session?.user ? (

@@ -304,12 +304,17 @@ export default async function HomePage() {
             <h2 className="font-[family-name:var(--font-display)] text-xl font-bold">
               Role-Tailored Healthcare Workspaces
             </h2>
-            <Link
-              href="/auth"
-              className="text-sm font-semibold text-[var(--brand-accent-text)] hover:underline"
-            >
-              Choose role on Sign In →
-            </Link>
+            <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-[var(--brand-accent-text)]">
+              <Link href="/auth" className="hover:underline">
+                Patient Login →
+              </Link>
+              <Link href="/caregiver/login" className="hover:underline">
+                Caregiver Login →
+              </Link>
+              <Link href="/clinician/login" className="hover:underline">
+                Clinician System Login →
+              </Link>
+            </div>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
             {WORKSPACES.map((ws) => {

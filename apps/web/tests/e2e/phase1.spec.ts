@@ -119,6 +119,36 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
     await expect(page.getByText('Chain Verified')).toBeVisible();
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'consent-ledger-mobile.png'), fullPage: true });
 
+    // Verify dedicated separate Caregiver Portal (/caregiver/login) & Clinician System (/clinician/login)
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/caregiver/login');
+    await expect(page.getByRole('heading', { name: /Caregiver Portal Sign In/i })).toBeVisible();
+    await page.getByLabel('Email Address').fill(patientEmail);
+    await page.getByLabel('Password').fill(password);
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await expect(page.getByTestId('portal-auth-error')).toContainText(/not a Caregiver account/i);
+    await page.getByLabel('Email Address').fill(caregiverEmail);
+    await page.getByLabel('Password').fill(password);
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await page.waitForURL('**/caregiver*');
+    await expect(page.getByTestId('role-workspace-badge')).toContainText('Caregiver Monitor');
+
+    const separateClinicianEmail = `doctor-${suffix}@example.com`;
+    await page.goto('/clinician/login');
+    await expect(page.getByRole('heading', { name: /Clinician System Sign In/i })).toBeVisible();
+    await page.getByLabel('Email Address').fill(patientEmail);
+    await page.getByLabel('Password').fill(password);
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await expect(page.getByTestId('portal-auth-error')).toContainText(/not a Clinician account/i);
+    await page.getByRole('button', { name: /New Clinician Account/i }).click();
+    await page.getByLabel('Full Name').fill('Dr. Meera Shenoy');
+    await page.getByLabel(/Hospital \/ Department/i).fill('Geriatrics · KMC-48219');
+    await page.getByLabel('Email Address').fill(separateClinicianEmail);
+    await page.getByLabel('Password').fill(password);
+    await page.getByRole('button', { name: 'Create Account', exact: true }).click();
+    await page.waitForURL('**/clinician*');
+    await expect(page.getByTestId('role-workspace-badge')).toContainText('Clinician Workstation');
+
     expect(consoleErrors).toEqual([]);
     expect(pageErrors).toEqual([]);
   });

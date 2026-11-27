@@ -3,6 +3,7 @@ import { applyMigrations, closeDb, getDb } from '@/db';
 import { ensurePostgresRunning, type LocalPgHandle } from '@/db/local-pg';
 import { createSentinelAuth } from '@/lib/auth';
 import { getPublicAuthProvidersStatus, resolveGoogleAuthConfig } from '@/lib/auth-config';
+import { signPortalRoleIntent, verifyPortalRoleIntent } from '@/lib/auth-portal';
 
 let pgHandle: LocalPgHandle;
 
@@ -119,5 +120,22 @@ describe('Real Google OAuth Authentication (Better Auth)', () => {
     expect(scopes).toContain('email');
     expect(scopes).toContain('profile');
     expect(scopes).toContain('openid');
+  });
+
+  it('signs and verifies HMAC portal role intent tokens without accepting tampered or non-portal roles', () => {
+    const env = {
+      BETTER_AUTH_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    } as unknown as NodeJS.ProcessEnv;
+    const now = 1_700_000_000_000;
+
+    const cgToken = signPortalRoleIntent('caregiver', env, now);
+    const clToken = signPortalRoleIntent('clinician', env, now);
+    expect(verifyPortalRoleIntent(cgToken, env, now + 5_000)).toBe('caregiver');
+    expect(verifyPortalRoleIntent(clToken, env, now + 5_000)).toBe('clinician');
+
+    const tampered = cgToken.replace('caregiver', 'clinician');
+    expect(verifyPortalRoleIntent(tampered, env, now + 5_000)).toBeNull();
+    expect(verifyPortalRoleIntent(cgToken, env, now + 20 * 60 * 1000)).toBeNull();
+    expect(verifyPortalRoleIntent(`org_admin.${now}.deadbeef`, env, now)).toBeNull();
   });
 });
