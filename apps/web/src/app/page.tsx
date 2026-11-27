@@ -5,17 +5,15 @@ import {
   BellRing,
   CheckCircle2,
   Database,
-  FlaskConical,
-  Footprints,
   HeartPulse,
   Languages,
   LineChart,
   Lock,
-  Moon,
   Palette,
   ShieldCheck,
   Stethoscope,
   Users,
+  Watch,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { CalmFade } from '@/components/motion/primitives';
@@ -178,10 +176,10 @@ export default async function HomePage() {
                     Personal physiological baselines that notice changes before crisis.
                   </h1>
                   <p className="mt-4 text-base text-[var(--text-muted)]">
-                    Built for elderly home care and chronic monitoring (Nitte Pharma Problem S2).
-                    SENTINEL learns each individual&apos;s own normal, enforces strict pre-login PHI
-                    isolation with PostgreSQL Row-Level Security, and guides caregivers calmly across
-                    English, Kannada, and Hindi.
+                    Built for elderly home care and chronic physiological monitoring. SENTINEL learns
+                    each individual&apos;s own normal, enforces strict pre-login PHI isolation with
+                    PostgreSQL Row-Level Security, and guides caregivers calmly across English,
+                    Kannada, and Hindi.
                   </p>
                 </div>
 
@@ -194,7 +192,7 @@ export default async function HomePage() {
                       <span>
                         {session
                           ? `Signed in as ${session.name} (${session.role})`
-                          : 'Sign In / Switch Role'}
+                          : 'Sign In / Create Account'}
                       </span>
                       <ArrowRight className="h-4 w-4" aria-hidden="true" />
                     </Link>
@@ -207,102 +205,50 @@ export default async function HomePage() {
                     </Link>
                   </div>
                   <p className="text-xs text-[var(--text-muted)]">
-                    Zero protected patient data is exposed prior to authentication. Local demo
-                    sandbox accounts are available on <code className="font-[family-name:var(--font-mono)]">/auth</code>.
+                    Zero protected patient data is exposed prior to authentication. Create a new
+                    account on <code className="font-[family-name:var(--font-mono)]">/auth</code> or
+                    sign in with Google to pair your smartwatch.
                   </p>
                 </div>
               </div>
 
-              {/* Right Preview Bento Matching Sent-Image Template Layout (Explicitly SYNTHETIC PREVIEW) */}
+              {/* Right Sync Architecture & Restrained Hero Visual */}
               <div className="flex flex-col gap-4 lg:col-span-6">
                 <div className="flex items-center justify-between px-1">
                   <span className="font-[family-name:var(--font-display)] text-base font-bold text-[var(--text-primary)]">
-                    Sample Interface Preview (Zero Real PHI)
+                    Universal Smartwatch Ingestion &amp; Privacy
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--status-synthetic-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--status-synthetic)]">
-                    <FlaskConical className="h-3 w-3" aria-hidden="true" />
-                    SYNTHETIC PREVIEW
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--status-stable-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--status-stable)]">
+                    <Watch className="h-3 w-3" aria-hidden="true" />
+                    REAL TELEMETRY READY
                   </span>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {/* Miniature Daily Activity Ring Preview Card matching sent template */}
-                  <div className="clinical-card flex items-center gap-4 p-4">
-                    <div className="relative flex h-20 w-20 shrink-0 items-center justify-center">
-                      <svg className="h-20 w-20 -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
-                        <defs>
-                          <linearGradient id="landingRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stopColor="var(--brand-secondary)" />
-                            <stop offset="100%" stopColor="var(--brand-primary)" />
-                          </linearGradient>
-                        </defs>
-                        <circle
-                          cx="40"
-                          cy="40"
-                          r="32"
-                          fill="transparent"
-                          stroke="var(--bg-mint-panel)"
-                          strokeWidth="8"
-                        />
-                        <circle
-                          cx="40"
-                          cy="40"
-                          r="32"
-                          fill="transparent"
-                          stroke="url(#landingRingGrad)"
-                          strokeWidth="8"
-                          strokeLinecap="round"
-                          strokeDasharray="201"
-                          strokeDashoffset="50"
-                        />
-                      </svg>
-                      <Footprints
-                        className="absolute h-4 w-4 text-[var(--brand-primary)]"
-                        aria-hidden="true"
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                        Daily Activity
-                      </p>
-                      <p className="mt-0.5 font-[family-name:var(--font-mono)] text-xl font-bold tabular-nums">
-                        75% Baseline
-                      </p>
-                      <p className="text-xs text-[var(--text-muted)]">Sample mobility tracking</p>
-                    </div>
+                  <div className="clinical-card p-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-[var(--brand-accent-text)]">
+                      Direct &amp; Mobile Watch Sync
+                    </p>
+                    <p className="mt-1 font-[family-name:var(--font-display)] text-base font-bold">
+                      Any Watch · Zero Vendor Lock
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Web Bluetooth BLE 0x180D, Apple Watch Health Auto Export, Android Health
+                      Connect, XML &amp; CSV.
+                    </p>
                   </div>
 
-                  {/* Miniature Sleep Quality Wave Preview Card matching sent template */}
                   <div className="clinical-card p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                        Sleep Quality
-                      </span>
-                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--sleep-bg)] text-[var(--sleep-accent)]">
-                        <Moon className="h-3.5 w-3.5" aria-hidden="true" />
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between gap-2">
-                      <span className="font-[family-name:var(--font-mono)] text-xl font-bold tabular-nums">
-                        7h 20m
-                      </span>
-                      <span className="text-xs font-semibold text-[var(--sleep-accent)]">
-                        Sample Wave
-                      </span>
-                    </div>
-                    <svg
-                      viewBox="0 0 180 34"
-                      className="mt-2 h-8 w-full overflow-visible"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M 2 24 C 24 8, 42 28, 66 14 C 92 4, 114 26, 138 12 C 154 6, 168 18, 178 14"
-                        fill="none"
-                        stroke="var(--sleep-accent)"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                      />
-                    </svg>
+                    <p className="text-xs font-bold uppercase tracking-wider text-[var(--brand-accent-text)]">
+                      Privacy &amp; Clinical Trace
+                    </p>
+                    <p className="mt-1 font-[family-name:var(--font-display)] text-base font-bold">
+                      DPDP &amp; FHIR R4 Ready
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      AES-256-GCM field encryption, instant consent withdrawal, and SHA-256 audit
+                      verification.
+                    </p>
                   </div>
                 </div>
 

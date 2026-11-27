@@ -85,7 +85,9 @@ async function main() {
 
   const pgHandle = await ensurePostgresRunning(5433);
   await applyMigrations();
-  await seedDatabase();
+  if (process.env.SENTINEL_E2E_SEED === '1') {
+    await seedDatabase();
+  }
   await closeDb();
 
   const pyProc = await maybeStartPythonEngine(engineUrl);

@@ -9,7 +9,6 @@ import {
   CloudSun,
   FileSpreadsheet,
   FileUp,
-  FlaskConical,
   KeyRound,
   Radio,
   ShieldAlert,
@@ -111,11 +110,9 @@ export default function IngestPage() {
   const [unitCol, setUnitCol] = useState('unit');
 
   // API key state
-  const [keyName, setKeyName] = useState('Garry Watch Bridge');
+  const [keyName, setKeyName] = useState('');
   const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
 
-  // Synthetic sim state
-  const [scenario, setScenario] = useState('early_infection');
   const [enginePreview, setEnginePreview] = useState<EnginePreviewResult | null>(null);
 
   const engineEvalMutation = useMutation({
@@ -227,27 +224,6 @@ export default function IngestPage() {
     onError: (err) => setErrorMsg(err instanceof Error ? err.message : 'Failed to create key'),
   });
 
-  const simMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('/api/v1/sim/generate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ scenario, seed: 42, totalDays: 16 }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? 'Synthetic generation failed');
-      return body;
-    },
-    onSuccess: (data) => {
-      setErrorMsg(null);
-      setStatusMsg(
-        `SYNTHETIC scenario "${data.scenario}" ingested (${data.ingest.recordsAccepted} samples via ${data.engineSource}).`,
-      );
-      qc.invalidateQueries({ queryKey: ['quality-status'] });
-    },
-    onError: (err) => setErrorMsg(err instanceof Error ? err.message : 'Simulation failed'),
-  });
-
   const envMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch('/api/v1/context/environment', {
@@ -285,14 +261,14 @@ export default function IngestPage() {
   return (
     <SentinelShell
       title="Wearable Data Ingestion & Quality Pipeline"
-      subtitle="Apple Health XML, CSV/Takeout mappers, device API keys, data quality & Synthetic Sandbox"
+      subtitle="Smartwatch sync, Apple Health XML, CSV/Takeout mappers, device API keys & quality ledger"
       isSynthetic={hasSynthetic}
     >
       <main className="space-y-6">
         {isUnauth ? (
           <SignedOutGate
             heading="Sign in required to import wearable data"
-            description="Sign in as Ramesh Pai or a consented care-circle member to upload exports or run simulations."
+            description="Sign in as a patient or consented care-circle member to pair a smartwatch or upload health exports."
           />
         ) : (
           <>
@@ -398,7 +374,7 @@ export default function IngestPage() {
             />
 
             <div className="grid gap-6 lg:grid-cols-2">
-              {/* Apple Health XML & Synthetic Generator */}
+              {/* Apple Health XML Importer */}
               <section className="min-w-0 space-y-6">
                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
                   <div className="flex items-center gap-2">
@@ -426,56 +402,6 @@ export default function IngestPage() {
                       className="sr-only"
                     />
                   </label>
-                </div>
-
-                <div className="rounded-2xl border border-[var(--status-synthetic)] bg-[var(--bg-surface)] p-6">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <FlaskConical
-                        className="h-5 w-5 text-[var(--status-synthetic)]"
-                        aria-hidden="true"
-                      />
-                      <h2 className="text-lg font-semibold">Synthetic Physiological Scenario Mode</h2>
-                    </div>
-                    <span className="rounded-full bg-[var(--status-synthetic-bg)] px-2.5 py-0.5 text-xs font-bold text-[var(--status-synthetic)]">
-                      SYNTHETIC
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    Generates seeded multi-day series with ground-truth onset times. All rows are
-                    tagged `is_synthetic=true`.
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <label htmlFor="sim-scenario" className="sr-only">
-                      Scenario
-                    </label>
-                    <select
-                      id="sim-scenario"
-                      value={scenario}
-                      onChange={(e) => setScenario(e.target.value)}
-                      className="min-h-11 w-full min-w-0 sm:flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-sm"
-                    >
-                      <option value="baseline_stable">Baseline Stable (Healthy 16d)</option>
-                      <option value="early_infection">Early Infection / Febrile Prodrome</option>
-                      <option value="hf_decompensation">Heart Failure Decompensation</option>
-                      <option value="copd_exacerbation">COPD Exacerbation (Scale 2)</option>
-                      <option value="arrhythmia_episode">Arrhythmia / AFib Episode</option>
-                      <option value="dehydration_heat">Dehydration & Heat Stress</option>
-                      <option value="post_discharge_decline">Post-Discharge Decline</option>
-                      <option value="missed_medication">Missed Medication Rebound</option>
-                      <option value="fall_event">Fall Event + Inactivity</option>
-                      <option value="exercise_confounder">Exercise Confounder (Must Not Alert)</option>
-                      <option value="off_wrist_silence">Off-Wrist Device Silence (18h)</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => simMutation.mutate()}
-                      disabled={simMutation.isPending}
-                      className="min-h-11 rounded-xl bg-[var(--status-synthetic)] px-4 text-sm font-semibold text-white cursor-pointer"
-                    >
-                      {simMutation.isPending ? 'Generating...' : 'Generate Synthetic Series'}
-                    </button>
-                  </div>
                 </div>
               </section>
 
@@ -570,12 +496,14 @@ export default function IngestPage() {
                       id="new-key-name"
                       value={keyName}
                       onChange={(e) => setKeyName(e.target.value)}
+                      placeholder="e.g. Home Smartwatch"
                       className="min-h-11 min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-sm"
                     />
                     <button
                       type="button"
                       onClick={() => createKeyMutation.mutate()}
-                      className="min-h-11 rounded-lg bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--brand-primary-fg)] cursor-pointer"
+                      disabled={keyName.trim().length < 2 || createKeyMutation.isPending}
+                      className="min-h-11 rounded-lg bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--brand-primary-fg)] disabled:opacity-50 cursor-pointer"
                     >
                       Generate Key
                     </button>
@@ -737,8 +665,8 @@ export default function IngestPage() {
                     {(qualityQuery.data?.batches.length ?? 0) === 0 && (
                       <tr>
                         <td colSpan={5} className="py-4 text-center text-[var(--text-muted)]">
-                          No batches ingested yet. Upload Apple Health XML, CSV, or run Synthetic
-                          mode above.
+                          No batches ingested yet. Pair a Bluetooth smartwatch, send companion webhook
+                          readings, or upload Apple Health XML / CSV above.
                         </td>
                       </tr>
                     )}

@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity,
-  BarChart3,
   BellRing,
   Database,
   FileText,
@@ -27,7 +26,6 @@ const NAV_LINKS = [
   { href: '/clinician/report', label: 'Reports', icon: FileText },
   { href: '/ingest', label: 'Import', icon: Database },
   { href: '/settings/consent', label: 'Consent', icon: Users },
-  { href: '/eval', label: 'Audit & Eval', icon: BarChart3 },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

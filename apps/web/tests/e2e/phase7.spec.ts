@@ -3,13 +3,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { signUpViaUi } from './helpers/real-auth';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '../../../../docs/evidence/phase-7');
 mkdirSync(EVIDENCE_DIR, { recursive: true });
 
 test.describe('Phase 7 Voice Check-In, Inbox Reply Webhook & Medications E2E', () => {
-  test('processes voice red-flag check-in on /today, logs medication dose, and executes Email Reply CALL ME / OK webhook on /alerts', async ({
+  test('processes voice red-flag check-in on /today, logs medication dose, and handles Cloudflare Email Reply webhook on /alerts', async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -18,13 +19,35 @@ test.describe('Phase 7 Voice Check-In, Inbox Reply Webhook & Medications E2E', (
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/auth');
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
-    await page.request.delete('/api/v1/alerts');
+    const suffix = `${Date.now()}-p7`;
+    const password = 'SentinelReal#2026!';
+    const caregiverEmail = `caregiver-${suffix}@example.com`;
+    const patientEmail = `patient-${suffix}@example.com`;
 
-    // Add a heart-rate medication via /api/v1/medications so /today renders adherence controls
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await signUpViaUi(page, {
+      name: 'Meera Hegde',
+      email: caregiverEmail,
+      password,
+      role: 'caregiver',
+      expectedUrlPart: '/caregiver',
+    });
+
+    await signUpViaUi(page, {
+      name: 'Mohan Hegde',
+      email: patientEmail,
+      password,
+      role: 'patient',
+      expectedUrlPart: '/today',
+    });
+
+    // Invite caregiver so email reply webhook resolves authentic care-circle member
+    await page.goto('/settings/consent');
+    await page.getByLabel('Caregiver or clinician email').fill(caregiverEmail);
+    await page.getByLabel('Relationship').selectOption('primary_caregiver');
+    await page.getByRole('button', { name: 'Invite' }).click();
+    await expect(page.getByText('Meera Hegde').first()).toBeVisible();
+
     const medRes = await page.request.post('/api/v1/medications', {
       data: {
         action: 'add_medication',
@@ -47,12 +70,24 @@ test.describe('Phase 7 Voice Check-In, Inbox Reply Webhook & Medications E2E', (
     expect(axe1.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'today-voice-meds-desktop.png'), fullPage: true });
 
-    // 2. /alerts Cloudflare Agentic Inbox Email Reply Simulator -> send "OK" to acknowledge the voice alert
+    // 2. Verify /alerts has no UI email simulator and handles genuine inbound worker webhook POST
     await page.goto('/alerts');
-    await expect(page.getByRole('button', { name: /Simulate Email Reply: OK/i })).toBeVisible();
-    await page.getByRole('button', { name: /Simulate Email Reply: OK/i }).click();
-    await expect(page.getByRole('status').first()).toContainText(/acknowledged/i);
+    await expect(page.getByRole('button', { name: /Simulate Email Reply/i })).toHaveCount(0);
+    await expect(page.getByText(/urgent/i).first()).toBeVisible();
 
+    const webhookRes = await page.request.post('/api/v1/webhooks/inbox-reply', {
+      data: {
+        fromEmail: caregiverEmail,
+        bodyText: 'OK',
+      },
+    });
+    expect(webhookRes.status()).toBe(200);
+    const webhookJson = (await webhookRes.json()) as { status: string; parsedCommand: string };
+    expect(webhookJson.parsedCommand).toBe('acknowledge');
+    expect(webhookJson.status).toBe('acknowledged');
+
+    await page.reload();
+    await expect(page.getByText('acknowledged').first()).toBeVisible();
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'alerts-inbox-reply-desktop.png'), fullPage: true });
     expect(errors).toEqual([]);
   });

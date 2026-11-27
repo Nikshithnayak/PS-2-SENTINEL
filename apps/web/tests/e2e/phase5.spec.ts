@@ -3,6 +3,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import {
+  buildRealisticVitalsCsv,
+  setupPatientCaregiverClinician,
+  signUpViaUi,
+} from './helpers/real-auth';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '../../../../docs/evidence/phase-5');
@@ -18,20 +23,19 @@ test.describe('Phase 5 Multi-Role Dashboards Closed Loop E2E', () => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
+    const suffix = `${Date.now()}-p5`;
     await page.setViewportSize({ width: 1440, height: 900 });
 
-    // 1. Patient signs in, generates deterioration + fires urgent alert
-    await page.goto('/auth');
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
-    await page.request.delete('/api/v1/alerts');
+    // 1. Patient signs up, invites caregiver + clinician, imports real telemetry & evaluates
+    const creds = await setupPatientCaregiverClinician(page, suffix);
 
     await page.goto('/ingest');
-    await page.getByLabel('Scenario').selectOption('copd_exacerbation');
-    await page.getByRole('button', { name: 'Generate Synthetic Series' }).click();
-    await expect(page.getByRole('status')).toContainText('SYNTHETIC scenario "copd_exacerbation"');
+    await page.locator('#csv-takeout-text').fill(buildRealisticVitalsCsv('respiratory'));
+    await page.getByRole('button', { name: 'Import Mapped Records' }).click();
+    await expect(page.getByText(/Imported .* samples via csv/i)).toBeVisible();
     await page.getByRole('button', { name: 'Run Detection Engine' }).click();
     await expect(page.getByTestId('deterioration-index-value')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('engine-source-tag')).toContainText('python-engine');
 
     // 2. Patient /today Elder Mode: verify Why? drawer + Quick Check-In + axe
     await page.goto('/today');
@@ -61,13 +65,15 @@ test.describe('Phase 5 Multi-Role Dashboards Closed Loop E2E', () => {
     await expect(page.getByRole('status')).toContainText('Care preferences & alert thresholds saved');
     await expect(page.getByRole('link', { name: /Download Full DPDP JSON/i })).toBeVisible();
 
-    // 5. Switch to Caregiver (Kavitha Pai) -> verify live SSE & Acknowledge alert
-    await page.goto('/auth');
-    await page.getByRole('button', { name: /Kavitha Pai/i }).click();
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
+    // 5. Register Caregiver (auto-linked to pending invite) -> verify live SSE & Acknowledge
+    await signUpViaUi(page, {
+      name: 'Deepa Rao',
+      email: creds.caregiverEmail,
+      password: creds.password,
+      role: 'caregiver',
+      expectedUrlPart: '/caregiver',
+    });
 
-    await page.goto('/caregiver');
     await expect(page.getByTestId('caregiver-sse-pill')).toContainText('Live SSE', { timeout: 10_000 });
     await expect(page.getByTestId('caregiver-index')).toBeVisible();
     const ackBtn = page.getByRole('button', { name: 'Acknowledge' }).first();
@@ -79,14 +85,18 @@ test.describe('Phase 5 Multi-Role Dashboards Closed Loop E2E', () => {
     expect(axe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'caregiver-desktop.png'), fullPage: true });
 
-    // 6. Switch to Clinician (Dr. Shetty) -> verify Cohort table + ECharts + Partial NEWS2
-    await page.goto('/auth');
-    await page.getByRole('button', { name: /Dr. Arvind Shetty/i }).click();
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
+    // 6. Register Clinician (auto-linked) -> verify Cohort table + ECharts + Partial NEWS2
+    await signUpViaUi(page, {
+      name: 'Dr. Anand Kulkarni',
+      email: creds.clinicianEmail,
+      password: creds.password,
+      role: 'clinician',
+      expectedUrlPart: '/clinician',
+    });
 
-    await page.goto('/clinician');
     await expect(page.getByText(/Consented Patient Cohort/i)).toBeVisible();
+    await expect(page.getByText(/Asha Menon/i).first()).toBeVisible();
+    await page.getByRole('button', { name: /Asha Menon/i }).first().click();
     await expect(page.getByTestId('echarts-vitals-canvas')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Partial NEWS2 Assessment/i)).toBeVisible();
     await expect(page.getByRole('cell', { name: 'respiratory_rate' })).toBeVisible({ timeout: 10_000 });

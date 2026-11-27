@@ -3,6 +3,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import {
+  buildRealisticVitalsCsv,
+  setupPatientCaregiverClinician,
+  signUpViaUi,
+} from './helpers/real-auth';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '../../../../docs/evidence/phase-8');
@@ -19,11 +24,26 @@ test.describe('Phase 8 Evaluation Lab, Model Card & Clinical Exports E2E', () =>
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
+    const suffix = `${Date.now()}-p8`;
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/auth');
-    await page.getByRole('button', { name: /Dr. Arvind Shetty/i }).click();
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
+
+    // Patient creates real record & runs evaluation, then invites clinician
+    const creds = await setupPatientCaregiverClinician(page, suffix);
+    await page.goto('/ingest');
+    await page.locator('#csv-takeout-text').fill(buildRealisticVitalsCsv('febrile'));
+    await page.getByRole('button', { name: 'Import Mapped Records' }).click();
+    await expect(page.getByText(/Imported .* samples via csv/i)).toBeVisible();
+    await page.getByRole('button', { name: 'Run Detection Engine' }).click();
+    await expect(page.getByTestId('deterioration-index-value')).toBeVisible({ timeout: 20_000 });
+
+    // Clinician registers -> auto-linked via invite
+    await signUpViaUi(page, {
+      name: 'Dr. Kavita Kamath',
+      email: creds.clinicianEmail,
+      password: creds.password,
+      role: 'clinician',
+      expectedUrlPart: '/clinician',
+    });
 
     // 1. /eval Live Benchmark against Python FastAPI engine
     await page.goto('/eval');
@@ -56,7 +76,7 @@ test.describe('Phase 8 Evaluation Lab, Model Card & Clinical Exports E2E', () =>
     // 3. /clinician/report printable view & FHIR/cohort downloads
     await page.goto('/clinician/report');
     await expect(page.getByText(/Sachet · SENTINEL Longitudinal Telemetry Summary/i)).toBeVisible();
-    await expect(page.getByText(/Ramesh Pai/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Asha Menon/i).first()).toBeVisible({ timeout: 10_000 });
     await page.screenshot({
       path: resolve(EVIDENCE_DIR, 'clinician-report-desktop.png'),
       fullPage: true,

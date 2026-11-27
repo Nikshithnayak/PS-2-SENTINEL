@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import type { Role } from '@sentinel/shared';
 import {
   Activity,
-  BarChart3,
   BellRing,
   BookOpen,
   Database,
@@ -72,9 +71,8 @@ const NAV_GROUPS: NavGroup[] = [
     roles: 'all',
     items: [
       { href: '/ingest', label: 'Data Import', icon: Database },
-      { href: '/settings/consent', label: 'Consent', icon: Users },
+      { href: '/settings/consent', label: 'Consent & Audit', icon: ShieldCheck },
       { href: '/settings', label: 'Settings', icon: Settings },
-      { href: '/eval', label: 'Audit & Eval', icon: BarChart3 },
     ],
   },
 ];

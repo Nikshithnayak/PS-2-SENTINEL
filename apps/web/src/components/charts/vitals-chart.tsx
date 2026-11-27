@@ -192,26 +192,26 @@ export function VitalsChart({
           },
           markArea: hasBand
             ? {
-                silent: true,
-                itemStyle: { color: 'rgba(82, 163, 158, 0.14)' },
-                data: [[{ yAxis: bandLow! }, { yAxis: bandHigh! }]],
-              }
+              silent: true,
+              itemStyle: { color: 'rgba(82, 163, 158, 0.14)' },
+              data: [[{ yAxis: bandLow! }, { yAxis: bandHigh! }]],
+            }
             : undefined,
           markLine: markLineData.length > 0 ? { data: markLineData as never } : undefined,
           markPoint: markPointData.length > 0 ? { data: markPointData as never } : undefined,
         },
         ...(baselineSeries
           ? [
-              {
-                name: 'Personal Normal',
-                type: 'line' as const,
-                showSymbol: false,
-                data: baselineSeries,
-                lineStyle: { color: '#4b9a9b', width: 1.75, type: 'dashed' as const },
-                itemStyle: { color: '#4b9a9b' },
-                silent: true,
-              },
-            ]
+            {
+              name: 'Personal Normal',
+              type: 'line' as const,
+              showSymbol: false,
+              data: baselineSeries,
+              lineStyle: { color: '#4b9a9b', width: 1.75, type: 'dashed' as const },
+              itemStyle: { color: '#4b9a9b' },
+              silent: true,
+            },
+          ]
           : []),
       ],
     };
@@ -278,7 +278,9 @@ export function VitalsChart({
     return (
       <div className="flex h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-base)] p-6 text-center text-sm text-[var(--text-muted)]">
         <p className="font-semibold">No {title} samples recorded in this window yet.</p>
-        <p className="mt-1 text-xs">Import Apple Health XML, CSV, or run Synthetic Scenario Mode.</p>
+        <p className="mt-1 text-xs">
+          Pair a smartwatch, import Apple Health XML, or upload CSV readings on Data Import.
+        </p>
       </div>
     );
   }

@@ -8,7 +8,6 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
-  FlaskConical,
   HeartHandshake,
   Info,
   Lock,
@@ -50,44 +49,13 @@ const ROLE_TABS = [
   },
 ] as const;
 
-const DEMO_ACCOUNTS = [
-  {
-    label: 'Ramesh Pai (Patient · Elder)',
-    email: 'ramesh@sentinel.local',
-    role: 'patient',
-    homeHref: '/today',
-    homeLabel: '/today',
-  },
-  {
-    label: 'Kavitha Pai (Primary Caregiver)',
-    email: 'kavitha@sentinel.local',
-    role: 'caregiver',
-    homeHref: '/caregiver',
-    homeLabel: '/caregiver',
-  },
-  {
-    label: 'Dr. Arvind Shetty (Clinician)',
-    email: 'dr.shetty@sentinel.local',
-    role: 'clinician',
-    homeHref: '/clinician',
-    homeLabel: '/clinician',
-  },
-  {
-    label: 'Nitte Pharma R&D (Org Admin)',
-    email: 'research@sentinel.local',
-    role: 'org_admin',
-    homeHref: '/eval',
-    homeLabel: '/eval',
-  },
-] as const;
-
 export default function AuthPage() {
   const router = useRouter();
   const { data: session, refetch } = authClient.useSession();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('ramesh@sentinel.local');
-  const [password, setPassword] = useState('SentinelDemo#2026');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState<'patient' | 'caregiver' | 'clinician' | 'org_admin'>('patient');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -124,9 +92,11 @@ export default function AuthPage() {
 
     setGoogleLoading(true);
     try {
+      const targetHref =
+        role === 'caregiver' ? '/caregiver' : role === 'clinician' || role === 'org_admin' ? '/clinician' : '/today';
       const res = await authClient.signIn.social({
         provider: 'google',
-        callbackURL: '/settings/consent',
+        callbackURL: targetHref,
         errorCallbackURL: '/auth?oauthError=google_signin_failed',
       });
       if (res?.error) {
@@ -164,7 +134,16 @@ export default function AuthPage() {
         }
       }
       await refetch();
-      router.push('/settings/consent');
+      const updated = await authClient.getSession();
+      const resolvedRole =
+        ((updated.data?.user as { role?: string } | undefined)?.role ?? role) as string;
+      const dest =
+        resolvedRole === 'caregiver'
+          ? '/caregiver'
+          : resolvedRole === 'clinician' || resolvedRole === 'org_admin'
+            ? '/clinician'
+            : '/today';
+      router.push(dest);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication error');
@@ -177,31 +156,6 @@ export default function AuthPage() {
     await authClient.signOut();
     await refetch();
     router.refresh();
-  }
-
-  async function handleQuickOpen(targetEmail: string, targetHref: string) {
-    setError(null);
-    setMode('signin');
-    setEmail(targetEmail);
-    setPassword('SentinelDemo#2026');
-    setLoading(true);
-    try {
-      const res = await authClient.signIn.email({
-        email: targetEmail,
-        password: 'SentinelDemo#2026',
-      });
-      if (res.error) {
-        setError(res.error.message ?? 'Sign in failed');
-        return;
-      }
-      await refetch();
-      router.push(targetHref);
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication error');
-    } finally {
-      setLoading(false);
-    }
   }
 
   const activeRoleTab = ROLE_TABS.find((t) => t.id === role) ?? ROLE_TABS[0];
@@ -407,7 +361,7 @@ export default function AuthPage() {
                       required
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g. Ramesh Pai"
+                      placeholder="Your full name"
                       className="mt-1 min-h-12 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3.5 text-base"
                     />
                   </div>
@@ -479,51 +433,6 @@ export default function AuthPage() {
                 )}
               </button>
             </form>
-
-            {/* Clearly labelled Synthetic Evaluation Sandbox Accounts */}
-            <div className="mt-7 border-t border-[var(--border-subtle)] pt-6">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                  Seeded Local Demo Accounts (Password: SentinelDemo#2026)
-                </h2>
-                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--status-synthetic-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--status-synthetic)]">
-                  <FlaskConical className="h-3 w-3" aria-hidden="true" />
-                  SYNTHETIC SANDBOX
-                </span>
-              </div>
-              <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-                {DEMO_ACCOUNTS.map((acct) => (
-                  <div
-                    key={acct.email}
-                    className="flex flex-col justify-between gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode('signin');
-                        setEmail(acct.email);
-                        setPassword('SentinelDemo#2026');
-                        setRole(acct.role === 'org_admin' ? 'clinician' : acct.role);
-                      }}
-                      className="w-full text-left text-xs font-medium hover:underline cursor-pointer"
-                    >
-                      <div className="font-semibold text-[var(--text-primary)]">{acct.label}</div>
-                      <div className="font-[family-name:var(--font-mono)] text-[var(--text-muted)]">
-                        {acct.email}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => handleQuickOpen(acct.email, acct.homeHref)}
-                      className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-xs font-semibold text-[var(--brand-accent-text)] transition hover:border-[var(--brand-primary)] disabled:opacity-60 cursor-pointer"
-                    >
-                      Quick Open {acct.homeLabel}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </main>

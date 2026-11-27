@@ -3,13 +3,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { signUpViaUi } from './helpers/real-auth';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '../../../../docs/evidence/phase-1');
 mkdirSync(EVIDENCE_DIR, { recursive: true });
 
 test.describe('Phase 1 Foundations E2E & Accessibility', () => {
-  test('renders home, design tokens, signs in, and verifies consent + audit ledger', async ({
+  test('verifies demo-free home & auth, registers real accounts, and manages consent + audit ledger', async ({
     page,
   }) => {
     const consoleErrors: string[] = [];
@@ -19,11 +20,17 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
     });
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
-    // Desktop Home
+    const suffix = `${Date.now()}-p1`;
+    const password = 'SentinelReal#2026!';
+    const caregiverEmail = `caregiver-${suffix}@example.com`;
+    const patientEmail = `patient-${suffix}@example.com`;
+
+    // Desktop Home (must contain zero fake sample previews or demo instructions)
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     await expect(page.getByText('Sachet · SENTINEL')).toBeVisible();
     await expect(page.getByText('Connected')).toBeVisible();
+    await expect(page.getByText('SYNTHETIC PREVIEW')).toHaveCount(0);
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'home-desktop-light.png'), fullPage: true });
 
     const homeAxe = await new AxeBuilder({ page }).analyze();
@@ -40,10 +47,14 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'design-dark.png'), fullPage: true });
     await page.getByRole('button', { name: /Switch to light theme/i }).click();
 
-    // Quick Open 1-click sign-in + direct workspace routing + Google OAuth card on /auth
+    // Auth page must be 100% clean (no Quick Open, no Seeded Local Demo Accounts, empty fields)
     await page.goto('/auth');
     const providersRes = await page.request.get('/api/v1/auth/providers');
     expect(providersRes.status()).toBe(200);
+    await expect(page.getByText(/Seeded Local Demo Accounts/i)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Quick Open/i })).toHaveCount(0);
+    await expect(page.getByLabel('Email Address')).toHaveValue('');
+
     const googleBtn = page.getByTestId('google-signin-button');
     await expect(googleBtn).toBeVisible();
     await googleBtn.click();
@@ -51,16 +62,30 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
 
     const authAxe = await new AxeBuilder({ page }).analyze();
     expect(authAxe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')).toEqual([]);
-    await expect(page.getByRole('button', { name: 'Quick Open /today' })).toBeVisible();
-    await page.getByRole('button', { name: 'Quick Open /today' }).click();
-    await page.waitForURL('**/today');
 
-    // Sign in as Ramesh Pai via Better Auth standard Sign In -> Consent Ledger
-    await page.goto('/auth');
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
+    // Register real caregiver first, then patient -> patient invites caregiver -> instant ConsentGrant
+    await signUpViaUi(page, {
+      name: 'Maya Nair',
+      email: caregiverEmail,
+      password,
+      role: 'caregiver',
+      expectedUrlPart: '/caregiver',
+    });
+
+    await signUpViaUi(page, {
+      name: 'Vikram Menon',
+      email: patientEmail,
+      password,
+      role: 'patient',
+      expectedUrlPart: '/today',
+    });
+
+    await page.goto('/settings/consent');
     await expect(page.getByText('DPDP Act 2023 Granular Consent Ledger')).toBeVisible();
-    await expect(page.getByText('Kavitha Pai').first()).toBeVisible();
+    await page.getByLabel('Caregiver or clinician email').fill(caregiverEmail);
+    await page.getByLabel('Relationship').selectOption('primary_caregiver');
+    await page.getByRole('button', { name: 'Invite' }).click();
+    await expect(page.getByText('Maya Nair').first()).toBeVisible();
     await expect(page.getByText('Chain Verified')).toBeVisible();
 
     // Exercise live consent withdrawal -> audit chain entry -> re-grant
@@ -81,7 +106,6 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
     );
     expect(seriousConsent).toEqual([]);
 
-    // Mobile 375px check
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/settings/consent');
     await expect(page.getByText('Chain Verified')).toBeVisible();

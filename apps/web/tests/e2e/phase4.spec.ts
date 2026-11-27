@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { buildRealisticVitalsCsv, signUpViaUi } from './helpers/real-auth';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '../../../../docs/evidence/phase-4');
@@ -18,22 +19,44 @@ test.describe('Phase 4 Alerting, Escalation Ladder & Transactional Outbox E2E', 
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
+    const suffix = `${Date.now()}-p4`;
+    const password = 'SentinelReal#2026!';
+    const caregiverEmail = `caregiver-${suffix}@example.com`;
+    const patientEmail = `patient-${suffix}@example.com`;
+
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/auth');
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
+    await signUpViaUi(page, {
+      name: 'Priya Menon',
+      email: caregiverEmail,
+      password,
+      role: 'caregiver',
+      expectedUrlPart: '/caregiver',
+    });
 
-    // Reset synthetic alert sandbox so cooldowns from prior test runs never pollute this flow
-    await page.request.delete('/api/v1/alerts');
+    await signUpViaUi(page, {
+      name: 'Raghav Menon',
+      email: patientEmail,
+      password,
+      role: 'patient',
+      expectedUrlPart: '/today',
+    });
 
-    // Ensure patient has urgent scenario samples loaded (urgent bypasses quiet hours 24/7)
+    // Link primary caregiver via Care Circle so email + step 1 escalation target exists
+    await page.goto('/settings/consent');
+    await page.getByLabel('Caregiver or clinician email').fill(caregiverEmail);
+    await page.getByLabel('Relationship').selectOption('primary_caregiver');
+    await page.getByRole('button', { name: 'Invite' }).click();
+    await expect(page.getByText('Priya Menon').first()).toBeVisible();
+
+    // Import urgent respiratory telemetry CSV (real non-synthetic readings)
     await page.goto('/ingest');
-    await page.getByLabel('Scenario').selectOption('copd_exacerbation');
-    await page.getByRole('button', { name: 'Generate Synthetic Series' }).click();
-    await expect(page.getByRole('status')).toContainText('SYNTHETIC scenario "copd_exacerbation"');
+    await page.locator('#csv-takeout-text').fill(buildRealisticVitalsCsv('respiratory'));
+    await page.getByRole('button', { name: 'Import Mapped Records' }).click();
+    await expect(page.getByText(/Imported .* samples via csv/i)).toBeVisible();
 
-    // Open Alerts Operations & wait for SSE connected
+    // Open Alerts Operations & verify zero demo Email Simulator card
     await page.goto('/alerts');
+    await expect(page.getByRole('button', { name: /Simulate Email Reply/i })).toHaveCount(0);
     await expect(page.getByTestId('sse-status')).toContainText('Live SSE', { timeout: 10_000 });
     await expect(page.getByText('Emergency: 112')).toBeVisible();
     await expect(page.getByText('Ambulance: 108')).toBeVisible();

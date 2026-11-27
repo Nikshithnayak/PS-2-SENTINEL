@@ -4,7 +4,7 @@ import { nextCookies } from 'better-auth/next-js';
 import { appendAuditLog, getDb, withSystemDb, type AppDb } from '@/db';
 import * as schema from '@/db/schema';
 import { encryptPhi } from '@sentinel/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { resolveGoogleAuthConfig } from './auth-config';
 
 export function createSentinelAuth(
@@ -69,6 +69,10 @@ export function createSentinelAuth(
           window: 60,
           max: 60,
         },
+        '/sign-up/email': {
+          window: 60,
+          max: 60,
+        },
         '/sign-in/social': {
           window: 60,
           max: 60,
@@ -117,6 +121,48 @@ export function createSentinelAuth(
                     locale,
                   });
                 }
+              }
+
+              // Link any pending Care Circle invitations addressed to this user's email
+              const normalizedEmail = createdUser.email.trim().toLowerCase();
+              const pendingInvites = await tx
+                .select()
+                .from(schema.careCircleMembers)
+                .where(
+                  and(
+                    eq(schema.careCircleMembers.invitedEmail, normalizedEmail),
+                    isNull(schema.careCircleMembers.memberUserId),
+                  ),
+                );
+
+              for (const invite of pendingInvites) {
+                await tx
+                  .update(schema.careCircleMembers)
+                  .set({ memberUserId: createdUser.id, status: 'active' })
+                  .where(eq(schema.careCircleMembers.id, invite.id));
+
+                const grantScopes =
+                  invite.relationship === 'clinician'
+                    ? ['vitals_read', 'alerts_receive', 'checkin_view', 'clinician_export']
+                    : ['vitals_read', 'alerts_receive', 'checkin_view'];
+                const grantRel =
+                  invite.relationship === 'clinician' ? 'clinician' : 'caregiver';
+
+                await tx.insert(schema.consentGrants).values({
+                  patientId: invite.patientId,
+                  granteeUserId: createdUser.id,
+                  relationship: grantRel,
+                  scopes: grantScopes,
+                  reason: 'Care Circle invitation accepted on registration',
+                });
+
+                await appendAuditLog(tx, {
+                  actorUserId: createdUser.id,
+                  action: 'care_circle.invite_accepted',
+                  targetType: 'care_circle_member',
+                  targetId: invite.id,
+                  payload: { patientId: invite.patientId, relationship: invite.relationship },
+                });
               }
 
               await appendAuditLog(tx, {

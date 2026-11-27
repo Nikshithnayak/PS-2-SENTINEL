@@ -52,7 +52,7 @@ export default function SettingsPage() {
   const [silentHours, setSilentHours] = useState(12);
   const [emergencyNum, setEmergencyNum] = useState('112');
   const [ambulanceNum, setAmbulanceNum] = useState('108');
-  const [city, setCity] = useState('Mangaluru');
+  const [city, setCity] = useState('');
   const [modules, setModules] = useState<string[]>(['general_frailty']);
   const [erasePhrase, setErasePhrase] = useState('');
 
@@ -66,7 +66,7 @@ export default function SettingsPage() {
     setSilentHours(p.silentAlertHours);
     setEmergencyNum(p.emergencyNumber);
     setAmbulanceNum(p.ambulanceNumber);
-    setCity(p.city ?? 'Mangaluru');
+    setCity(p.city ?? '');
     setModules(p.conditionModules);
   }, [profileQuery.data]);
 
@@ -83,7 +83,7 @@ export default function SettingsPage() {
           silentAlertHours: silentHours,
           emergencyNumber: emergencyNum,
           ambulanceNumber: ambulanceNum,
-          city,
+          ...(city.trim().length >= 2 ? { city: city.trim() } : {}),
           conditionModules: modules.length > 0 ? modules : ['general_frailty'],
         }),
       });
@@ -283,11 +283,10 @@ export default function SettingsPage() {
                             prev.includes(cond) ? prev.filter((c) => c !== cond) : [...prev, cond],
                           )
                         }
-                        className={`min-h-10 rounded-lg border px-3 text-xs font-semibold cursor-pointer ${
-                          checked
-                            ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
-                            : 'border-[var(--border-subtle)]'
-                        }`}
+                        className={`min-h-10 rounded-lg border px-3 text-xs font-semibold cursor-pointer ${checked
+                          ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
+                          : 'border-[var(--border-subtle)]'
+                          }`}
                       >
                         {cond}
                       </button>

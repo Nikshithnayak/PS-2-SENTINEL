@@ -3,13 +3,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { signUpViaUi } from './helpers/real-auth';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '../../../../docs/evidence/phase-2');
 mkdirSync(EVIDENCE_DIR, { recursive: true });
 
-test.describe('Phase 2 Data Ingestion & Quality Pipeline E2E', () => {
-  test('imports Apple Health XML, generates API key, triggers Synthetic mode with badge', async ({
+test.describe('Phase 2 Data Ingestion & Smartwatch Sync E2E', () => {
+  test('connects watch webhook, generates API key, imports Apple Health XML & CSV without synthetic simulator', async ({
     page,
   }) => {
     const consoleErrors: string[] = [];
@@ -19,13 +20,19 @@ test.describe('Phase 2 Data Ingestion & Quality Pipeline E2E', () => {
     });
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
+    const suffix = `${Date.now()}-p2`;
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/auth');
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
+    await signUpViaUi(page, {
+      name: 'Neha Rao',
+      email: `patient-${suffix}@example.com`,
+      password: 'SentinelReal#2026!',
+      role: 'patient',
+      expectedUrlPart: '/today',
+    });
 
     await page.goto('/ingest');
     await expect(page.getByText('Wearable Data Ingestion & Quality Pipeline')).toBeVisible();
+    await expect(page.getByText('Synthetic Physiological Scenario Mode')).toHaveCount(0);
 
     // Verify Universal Watch Sync Hub & generate device API key
     await expect(
@@ -35,6 +42,7 @@ test.describe('Phase 2 Data Ingestion & Quality Pipeline E2E', () => {
     await expect(page.getByText(/Health Auto Export/i).first()).toBeVisible();
     await page.getByRole('button', { name: 'Watch JSON / curl' }).click();
 
+    await page.getByLabel('Device key name').fill('Galaxy Watch 7');
     await page.getByRole('button', { name: 'Generate Key' }).click();
     const keyNotice = page.getByText(/Copy now \(shown once\):/);
     await expect(keyNotice).toBeVisible();
@@ -81,11 +89,7 @@ test.describe('Phase 2 Data Ingestion & Quality Pipeline E2E', () => {
     await page.locator('#apple-xml-input').setInputFiles(fixturePath);
     await expect(page.getByText(/Apple Health XML imported: 3 samples persisted/i)).toBeVisible();
     await expect(page.getByText('apple_health_xml').first()).toBeVisible();
-
-    // Trigger Synthetic scenario and verify SYNTHETIC badge renders prominently
-    await page.getByRole('button', { name: 'Generate Synthetic Series' }).click();
-    await expect(page.getByText(/SYNTHETIC scenario "early_infection" ingested/i)).toBeVisible();
-    await expect(page.getByText('SYNTHETIC', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Real Import').first()).toBeVisible();
 
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'ingest-desktop.png'), fullPage: true });
 

@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { signUpViaUi } from './helpers/real-auth';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '../../../../docs/evidence/phase-6');
@@ -23,18 +24,15 @@ test.describe('Phase 6 Signature Visuals, Reduced Motion, i18n & PWA Verificatio
     await page.goto('/');
     await expect(page.getByText(/Personal physiological baselines/i)).toBeVisible();
 
-    // Verify at most 1 WebGL canvas on landing page
     const webglCanvases = await page.locator('canvas').count();
     expect(webglCanvases).toBeLessThanOrEqual(1);
 
-    // Check web-vitals timing proxy (< 2500ms load on local prod server)
     const timing = await page.evaluate(() => {
       const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
       return nav ? Math.round(nav.domContentLoadedEventEnd) : 0;
     });
     expect(timing).toBeLessThan(3500);
 
-    // Check PWA manifest and service worker endpoints serve cleanly
     const manifestRes = await page.request.get('/manifest.webmanifest');
     expect(manifestRes.status()).toBe(200);
     const manifestJson = await manifestRes.json();
@@ -45,7 +43,6 @@ test.describe('Phase 6 Signature Visuals, Reduced Motion, i18n & PWA Verificatio
 
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'home-visual-desktop.png'), fullPage: true });
 
-    // Reduced-motion browser context MUST render static SVG fallback with 0 WebGL canvases
     const reducedCtx = await browser.newContext({ reducedMotion: 'reduce' });
     const reducedPage = await reducedCtx.newPage();
     await reducedPage.goto('http://127.0.0.1:3100/');
@@ -56,11 +53,15 @@ test.describe('Phase 6 Signature Visuals, Reduced Motion, i18n & PWA Verificatio
     });
     await reducedCtx.close();
 
-    // Check Kannada & Hindi on Elder Mode /today
-    await page.goto('/auth');
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.waitForURL('**/settings/consent');
-    await page.goto('/today');
+    // Register real patient and check Kannada & Hindi on Elder Mode /today
+    const suffix = `${Date.now()}-p6`;
+    await signUpViaUi(page, {
+      name: 'Lakshmi Bhat',
+      email: `patient-${suffix}@example.com`,
+      password: 'SentinelReal#2026!',
+      role: 'patient',
+      expectedUrlPart: '/today',
+    });
 
     await page.getByRole('button', { name: 'ಕನ್ನಡ' }).click();
     await expect(page.getByText(/ನಮಸ್ಕಾರ/)).toBeVisible();
