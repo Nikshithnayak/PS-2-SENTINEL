@@ -371,7 +371,7 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Card 1: Direct Browser Web Bluetooth Watch Stream */}
-        <article className="clinical-card flex flex-col justify-between p-5">
+        <article className="clinical-card flex min-w-0 flex-col justify-between overflow-hidden p-5">
           <div>
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2.5">
@@ -486,7 +486,7 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
         </article>
 
         {/* Card 2: Any Phone / Watch Companion Webhook + Cloud Adapters */}
-        <article className="clinical-card flex flex-col justify-between p-5">
+        <article className="clinical-card flex min-w-0 flex-col justify-between overflow-hidden p-5">
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
@@ -542,20 +542,20 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
             </div>
 
             {platform === 'curl' && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-                  <span className="font-[family-name:var(--font-mono)]">
+              <div className="mt-3 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
+                  <span className="min-w-0 break-all font-[family-name:var(--font-mono)]">
                     POST {webhookUrl}
                   </span>
                   <button
                     type="button"
                     onClick={() => void copyText('curl', curlSnippet)}
-                    className="font-semibold text-[var(--brand-accent-text)] hover:underline cursor-pointer"
+                    className="shrink-0 font-semibold text-[var(--brand-accent-text)] hover:underline cursor-pointer"
                   >
                     {copiedKey === 'curl' ? 'Copied command' : 'Copy command'}
                   </button>
                 </div>
-                <pre className="mt-1.5 overflow-x-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 font-[family-name:var(--font-mono)] text-[11px] text-[var(--text-primary)]">
+                <pre className="mt-1.5 max-w-full overflow-x-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 font-[family-name:var(--font-mono)] text-[11px] text-[var(--text-primary)]">
                   {sampleJson}
                 </pre>
               </div>
