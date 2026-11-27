@@ -1,0 +1,14 @@
+_refs/
+.local-pgdata/
+**/.venv/
+**/__pycache__/
+**/node_modules/
+**/.next/
+**/.turbo/
+playwright-report/
+test-results/
+docs/evidence/
+.env
+.env.local
+.env.*.local
+*.log
