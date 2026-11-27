@@ -1,13 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import QRCode from 'qrcode';
 import {
   Activity,
   Bluetooth,
   Check,
+  CheckCircle2,
   Copy,
+  Link2,
+  QrCode,
   RefreshCw,
   Smartphone,
+  Unplug,
   Watch,
   Webhook,
 } from 'lucide-react';
@@ -24,9 +29,33 @@ export interface AdapterHealthSummary {
   message: string;
 }
 
+export interface GoogleConnectorsSummary {
+  oauthClientConfigured: boolean;
+  callbackUrl: string;
+  connections: {
+    google_fit: {
+      mode: 'google_fit';
+      connected: boolean;
+      scope: string | null;
+      hasRefreshToken: boolean;
+      expiresAt: string | null;
+      updatedAt: string | null;
+    };
+    google_health_api: {
+      mode: 'google_health_api';
+      connected: boolean;
+      scope: string | null;
+      hasRefreshToken: boolean;
+      expiresAt: string | null;
+      updatedAt: string | null;
+    };
+  };
+}
+
 interface WatchSyncHubProps {
   patientId?: string;
   adapters?: AdapterHealthSummary[];
+  googleConnectors?: GoogleConnectorsSummary;
   onSyncComplete: () => void;
 }
 
@@ -62,11 +91,16 @@ interface NavigatorBluetoothLike {
   }): Promise<BluetoothDeviceLike>;
 }
 
-type CompanionPlatform = 'curl' | 'apple' | 'android';
+type CompanionPlatform = 'android' | 'apple' | 'curl';
 
 const subscribeNoop = () => () => {};
 
-export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: WatchSyncHubProps) {
+export function WatchSyncHub({
+  patientId,
+  adapters = [],
+  googleConnectors,
+  onSyncComplete,
+}: WatchSyncHubProps) {
   const bleSupported = useSyncExternalStore(
     subscribeNoop,
     () => typeof navigator !== 'undefined' && 'bluetooth' in navigator,
@@ -77,8 +111,17 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
     () => (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'),
     () => 'http://localhost:3000',
   );
-  const [platform, setPlatform] = useState<CompanionPlatform>('curl');
+  const [platform, setPlatform] = useState<CompanionPlatform>('android');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // One-tap Android Health Connect / iPhone direct webhook pairing + QR
+  const [directPhoneUrl, setDirectPhoneUrl] = useState<string | null>(null);
+  const [directQrDataUrl, setDirectQrDataUrl] = useState<string | null>(null);
+  const [creatingPhoneLink, setCreatingPhoneLink] = useState(false);
+  const [phoneLinkError, setPhoneLinkError] = useState<string | null>(null);
+
+  // Google Fit / Health OAuth disconnect state
+  const [disconnectingMode, setDisconnectingMode] = useState<string | null>(null);
 
   // BLE Live Watch state
   const [bleStatus, setBleStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
@@ -120,6 +163,61 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
       setTimeout(() => setCopiedKey((prev) => (prev === key ? null : prev)), 2000);
     } catch {
       setCopiedKey(null);
+    }
+  }
+
+  async function createDirectPhoneSyncLink() {
+    if (!patientId) return;
+    setCreatingPhoneLink(true);
+    setPhoneLinkError(null);
+    try {
+      const label = `Health Connect Phone (${new Date().toISOString().slice(0, 10)})`;
+      const res = await fetch('/api/v1/api-keys', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: label }),
+      });
+      const body = (await res.json()) as { plaintextOnce?: string; error?: string };
+      if (!res.ok || !body.plaintextOnce) {
+        setPhoneLinkError(body.error ?? 'Unable to create phone sync link.');
+        return;
+      }
+      const syncUrl = `${origin}/api/v1/ingest/watch?apiKey=${encodeURIComponent(body.plaintextOnce)}&evaluate=true`;
+      setDirectPhoneUrl(syncUrl);
+      const qr = await QRCode.toDataURL(syncUrl, {
+        width: 176,
+        margin: 1,
+        color: { dark: '#102a3c', light: '#ffffff' },
+      });
+      setDirectQrDataUrl(qr);
+      onSyncComplete();
+    } catch {
+      setPhoneLinkError('Network error generating Health Connect sync link.');
+    } finally {
+      setCreatingPhoneLink(false);
+    }
+  }
+
+  async function disconnectGoogle(mode: 'google_fit' | 'google_health_api') {
+    setDisconnectingMode(mode);
+    setProviderError(null);
+    setProviderResult(null);
+    try {
+      const res = await fetch(`/api/v1/connectors/google/status?mode=${mode}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        setProviderError(`Failed to disconnect ${mode}.`);
+        return;
+      }
+      setProviderResult(
+        mode === 'google_fit' ? 'Google Fit disconnected.' : 'Google Health v4 disconnected.',
+      );
+      onSyncComplete();
+    } catch {
+      setProviderError('Network error disconnecting Google account.');
+    } finally {
+      setDisconnectingMode(null);
     }
   }
 
@@ -183,7 +281,6 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
         throw new Error('Watch does not expose a GATT server.');
       }
 
-      // Optional battery read (never blocks HR streaming if watch omits battery_service)
       try {
         const batterySvc = await server.getPrimaryService('battery_service');
         const batteryChar = await batterySvc.getCharacteristic('battery_level');
@@ -263,22 +360,22 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
     setBleMessage('Disconnected from Bluetooth watch.');
   }
 
-  async function triggerProviderSync(adapter: AdapterHealthSummary) {
+  async function triggerProviderSync(provider: string, unconfiguredMessage?: string) {
     if (!patientId) return;
     setProviderError(null);
     setProviderResult(null);
-    if (!adapter.configured) {
+    if (unconfiguredMessage) {
       setProviderError(
-        `${adapter.message} Push live watch readings with Bluetooth or the Webhook tab above until cloud credentials are configured.`,
+        `${unconfiguredMessage} Push live watch readings with Bluetooth or the Phone Health Connect link until cloud credentials are configured.`,
       );
       return;
     }
-    setSyncingProvider(adapter.provider);
+    setSyncingProvider(provider);
     try {
       const res = await fetch('/api/v1/sync/provider', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: adapter.provider, patientId, hoursBack: 24, evaluate: true }),
+        body: JSON.stringify({ provider, patientId, hoursBack: 48, evaluate: true }),
       });
       const body = (await res.json()) as {
         error?: string;
@@ -286,21 +383,26 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
         message?: string;
       };
       if (!res.ok) {
-        setProviderError(body.error ?? `Unable to sync ${adapter.provider}.`);
+        setProviderError(body.error ?? `Unable to sync ${provider}.`);
         return;
       }
       setProviderResult(
-        body.message ?? `Synced ${body.recordsAccepted ?? 0} real sample(s) from ${adapter.provider}.`,
+        body.message ?? `Synced ${body.recordsAccepted ?? 0} real sample(s) from ${provider}.`,
       );
       onSyncComplete();
     } catch {
-      setProviderError(`Network error syncing ${adapter.provider}.`);
+      setProviderError(`Network error syncing ${provider}.`);
     } finally {
       setSyncingProvider(null);
     }
   }
 
   const webhookUrl = `${origin}/api/v1/ingest/watch`;
+  const googleCallbackUrl = googleConnectors?.callbackUrl ?? `${origin}/api/v1/connectors/google/callback`;
+  const gfitConnected = googleConnectors?.connections.google_fit.connected ?? false;
+  const ghConnected = googleConnectors?.connections.google_health_api.connected ?? false;
+  const gOAuthReady = googleConnectors?.oauthClientConfigured ?? true;
+
   const effectivePatientId = patientId ?? '<YOUR_PATIENT_ID>';
   const sampleJson = JSON.stringify(
     {
@@ -328,24 +430,24 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
   return (
     <section
       aria-labelledby="watch-sync-heading"
-      className="mint-bento mb-6 p-6"
+      className="mint-bento mb-6 p-5 sm:p-6"
     >
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)]">
             <Watch className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Universal Smartwatch Sync · Any Watch</span>
+            <span>Direct Phone &amp; Watch Connections · Zero CSV Needed</span>
           </div>
           <h2
             id="watch-sync-heading"
             className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold text-[var(--text-primary)]"
           >
-            Connect Any Smartwatch Directly or via Companion Webhook
+            Connect Google Fit, Health Connect &amp; Any Smartwatch Directly
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-[var(--text-muted)]">
-            Pair via live Bluetooth Heart Rate broadcast, push automated snapshots from iPhone Apple
-            Shortcuts / Android Health Connect / Gadgetbridge, or pull from Open Wearables &amp;
-            Google Health cloud bridges.
+            Link Google Fit with 1-click OAuth, pair Android Health Connect via automatic background
+            sync, or stream live Bluetooth Heart Rate directly from your watch — no file downloads
+            required.
           </p>
         </div>
 
@@ -369,13 +471,242 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
         )}
       </div>
 
+      {/* Primary Row: Direct Google Fit / Google Health OAuth + Direct Android Health Connect Phone Bridge */}
+      <div className="mb-5 grid gap-5 lg:grid-cols-2">
+        {/* Direct Google Fit & Google Health Cloud OAuth */}
+        <article className="clinical-card flex min-w-0 flex-col justify-between overflow-hidden p-5">
+          <div>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-mint-panel)] text-[var(--brand-primary)]">
+                  <Link2 className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                    Google Fit &amp; Google Health (1-Click OAuth)
+                  </h3>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Authorize directly with your Google account — auto-refreshes tokens securely
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  gfitConnected || ghConnected
+                    ? 'border-[var(--status-stable)] bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
+                    : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
+                }`}
+              >
+                {gfitConnected || ghConnected ? 'Connected' : 'Ready to Connect'}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5 text-xs text-[var(--text-muted)]">
+              <p className="text-[var(--text-primary)]">
+                Pulls heart rate, steps, SpO₂, body temperature, blood pressure, glucose, and sleep
+                sessions directly from Google without downloading any files.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {gfitConnected ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void triggerProviderSync('google_fit')}
+                      disabled={!patientId || syncingProvider !== null}
+                      className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--brand-primary)] px-4 py-2 text-xs font-semibold text-[var(--brand-primary-fg)] disabled:opacity-50 cursor-pointer"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${syncingProvider === 'google_fit' ? 'animate-spin' : ''}`}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        {syncingProvider === 'google_fit' ? 'Syncing Google Fit...' : 'Sync Google Fit Now'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void disconnectGoogle('google_fit')}
+                      disabled={disconnectingMode !== null}
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] cursor-pointer"
+                    >
+                      <Unplug className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Disconnect</span>
+                    </button>
+                  </>
+                ) : (
+                  <a
+                    href={patientId ? `/api/v1/connectors/google/connect?mode=fit&patientId=${encodeURIComponent(patientId)}` : '/api/v1/connectors/google/connect?mode=fit'}
+                    aria-disabled={!gOAuthReady}
+                    className={`inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--brand-primary)] px-5 py-2 text-xs font-semibold text-[var(--brand-primary-fg)] ${!gOAuthReady ? 'pointer-events-none opacity-50' : ''}`}
+                  >
+                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                    <span>Connect Google Fit</span>
+                  </a>
+                )}
+
+                {ghConnected ? (
+                  <button
+                    type="button"
+                    onClick={() => void triggerProviderSync('google_health_api')}
+                    disabled={!patientId || syncingProvider !== null}
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)] cursor-pointer"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Sync Google Health v4</span>
+                  </button>
+                ) : (
+                  <a
+                    href={patientId ? `/api/v1/connectors/google/connect?mode=health&patientId=${encodeURIComponent(patientId)}` : '/api/v1/connectors/google/connect?mode=health'}
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+                  >
+                    <span>Connect Google Health v4</span>
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <details className="mt-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3.5 py-2.5 text-xs text-[var(--text-muted)]">
+            <summary className="cursor-pointer font-semibold text-[var(--text-primary)]">
+              Google Cloud OAuth &amp; Callback Setup Details
+            </summary>
+            <div className="mt-2 space-y-1.5">
+              <p>
+                Add this callback URL to <strong>Authorized redirect URIs</strong> in Google Cloud
+                Console and enable the <strong>Fitness API</strong> (or <strong>Google Health API</strong>):
+              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2">
+                <code className="min-w-0 break-all font-[family-name:var(--font-mono)] text-[11px] text-[var(--text-primary)]">
+                  {googleCallbackUrl}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => void copyText('gcallback', googleCallbackUrl)}
+                  className="shrink-0 font-semibold text-[var(--brand-accent-text)] hover:underline cursor-pointer"
+                >
+                  {copiedKey === 'gcallback' ? 'Copied' : 'Copy URI'}
+                </button>
+              </div>
+              <p>
+                Google is sunsetting legacy Google Fit REST endpoints at the end of 2026; if your
+                Google Cloud project cannot enable Fitness API, use the{' '}
+                <strong>Android Health Connect Direct Bridge</strong> next to this card for zero-quota
+                background sync from your phone.
+              </p>
+            </div>
+          </details>
+        </article>
+
+        {/* Direct Android Health Connect Phone Bridge (One-Tap Authenticated Link + QR) */}
+        <article className="clinical-card flex min-w-0 flex-col justify-between overflow-hidden p-5">
+          <div>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-mint-panel)] text-[var(--brand-primary)]">
+                  <QrCode className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                    Android Health Connect (Direct Phone Sync)
+                  </h3>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Automatic phone-to-SENTINEL sync from Samsung Health, Fit, Noise, boAt &amp; Pixel
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)]">
+                Zero CSV
+              </span>
+            </div>
+
+            <p className="mt-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 text-xs text-[var(--text-muted)]">
+              Android keeps Health Connect on your phone (Chrome cannot read it directly). Pair once
+              with free <strong>HC Webhook</strong> (open-source Android bridge) to sync Heart Rate,
+              HRV, SpO₂, Sleep &amp; Steps automatically every hour:
+            </p>
+
+            {directPhoneUrl ? (
+              <div className="mt-3 flex flex-col items-start gap-3 rounded-xl border border-[var(--status-stable)] bg-[var(--bg-base)] p-3.5 sm:flex-row sm:items-center">
+                {directQrDataUrl && (
+                  <img
+                    src={directQrDataUrl}
+                    alt="QR code for direct Android Health Connect and watch sync URL"
+                    className="h-32 w-32 shrink-0 rounded-lg border border-[var(--border-subtle)] bg-white p-1.5"
+                  />
+                )}
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="text-xs font-semibold text-[var(--status-stable)]">
+                    Direct Phone Sync URL Ready (Scan or Paste in HC Webhook / Shortcuts)
+                  </p>
+                  <code className="block max-w-full break-all rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2 font-[family-name:var(--font-mono)] text-[11px] text-[var(--text-primary)]">
+                    {directPhoneUrl}
+                  </code>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyText('directPhoneUrl', directPhoneUrl)}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-[var(--brand-primary)] px-4 py-1.5 text-xs font-semibold text-[var(--brand-primary-fg)] cursor-pointer"
+                    >
+                      {copiedKey === 'directPhoneUrl' ? (
+                        <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                      )}
+                      <span>
+                        {copiedKey === 'directPhoneUrl' ? 'Link Copied' : 'Copy Direct Sync Link'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <ol className="mt-3 list-decimal space-y-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5 pl-7 text-xs text-[var(--text-primary)]">
+                <li>
+                  Click <strong>Generate Direct Phone Sync Link &amp; QR</strong> below.
+                </li>
+                <li>
+                  Open free <strong>HC Webhook</strong> on Android (or{' '}
+                  <strong>Health Auto Export</strong> on iPhone) and grant Health Connect permissions.
+                </li>
+                <li>Scan the QR or paste the link once — vitals push in the background automatically.</li>
+              </ol>
+            )}
+
+            {phoneLinkError && (
+              <p className="mt-2 rounded-lg bg-[var(--status-urgent-bg)] px-3 py-2 text-xs font-medium text-[var(--status-urgent)]">
+                {phoneLinkError}
+              </p>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => void createDirectPhoneSyncLink()}
+              disabled={!patientId || creatingPhoneLink}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--brand-primary)] px-5 py-2 text-xs font-semibold text-[var(--brand-primary-fg)] disabled:opacity-50 cursor-pointer"
+            >
+              <QrCode className="h-4 w-4" aria-hidden="true" />
+              <span>
+                {creatingPhoneLink
+                  ? 'Creating Direct Link...'
+                  : directPhoneUrl
+                    ? 'Regenerate Phone Sync Link & QR'
+                    : 'Generate Direct Phone Sync Link & QR'}
+              </span>
+            </button>
+          </div>
+        </article>
+      </div>
+
+      {/* Secondary Row: Direct BLE Watch Streaming + Webhook Payload Inspector & Cloud Bridges */}
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Card 1: Direct Browser Web Bluetooth Watch Stream */}
         <article className="clinical-card flex min-w-0 flex-col justify-between overflow-hidden p-5">
           <div>
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--bg-mint-panel)] text-[var(--brand-primary)]">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-mint-panel)] text-[var(--brand-primary)]">
                   <Bluetooth className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <div>
@@ -426,8 +757,8 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
             ) : (
               <p className="mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5 text-xs text-[var(--text-muted)]">
                 {bleSupported
-                  ? 'Enable "Heart Rate Broadcast" on your watch, then pair directly from Chrome/Edge. Real packets (BPM + RR-interval HRV) buffer below and upload with zero synthetic data.'
-                  : 'Web Bluetooth requires Chrome or Microsoft Edge on desktop/Android over localhost or HTTPS. For Apple Watch, Samsung Galaxy Watch without BLE HR broadcast, or iOS Safari, use the Companion Webhook on the right.'}
+                  ? 'Enable "Heart Rate Broadcast" on your watch, then pair directly from Chrome on Android or desktop. Real packets (BPM + RR-interval HRV) buffer below and upload with zero synthetic data.'
+                  : 'Web Bluetooth requires Chrome or Edge on Android/Desktop over localhost or HTTPS. Use Android Health Connect or Apple Watch on iOS above/right.'}
               </p>
             )}
 
@@ -485,12 +816,12 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
           </div>
         </article>
 
-        {/* Card 2: Any Phone / Watch Companion Webhook + Cloud Adapters */}
+        {/* Card 2: Companion Webhook Specs & Cloud Adapters */}
         <article className="clinical-card flex min-w-0 flex-col justify-between overflow-hidden p-5">
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--bg-mint-panel)] text-[var(--brand-primary)]">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-mint-panel)] text-[var(--brand-primary)]">
                   <Webhook className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <div>
@@ -498,7 +829,7 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
                     Companion Webhook &amp; Cloud Sync
                   </h3>
                   <p className="text-xs text-[var(--text-muted)]">
-                    POST any watch JSON from iOS Shortcuts, Android Health Connect, or curl
+                    Accepts HC Webhook, iOS Health Auto Export &amp; custom JSON directly
                   </p>
                 </div>
               </div>
@@ -520,9 +851,9 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
             <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Watch companion guide">
               {(
                 [
-                  { id: 'curl', label: 'Watch JSON / curl' },
+                  { id: 'android', label: 'Android Health Connect' },
                   { id: 'apple', label: 'Apple Watch (iOS)' },
-                  { id: 'android', label: 'Android / Wear OS / Band' },
+                  { id: 'curl', label: 'Watch JSON / curl' },
                 ] as const
               ).map((tab) => (
                 <button
@@ -540,6 +871,44 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
                 </button>
               ))}
             </div>
+
+            {platform === 'android' && (
+              <ol className="mt-3 list-decimal space-y-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4 pl-7 text-xs text-[var(--text-primary)]">
+                <li>
+                  Natively decodes <strong>HC Webhook</strong> JSON (
+                  <code className="font-[family-name:var(--font-mono)]">
+                    heart_rate, oxygen_saturation, sleep_sessions, steps, heart_rate_variability_rmssd
+                  </code>
+                  ).
+                </li>
+                <li>
+                  Authenticates via query param (<code className="font-[family-name:var(--font-mono)]">?apiKey=snt_live_...</code>),{' '}
+                  <code className="font-[family-name:var(--font-mono)]">Authorization: Bearer</code>, or{' '}
+                  <code className="font-[family-name:var(--font-mono)]">x-api-key</code>.
+                </li>
+                <li>
+                  Or use <strong>Connect Google Fit</strong> above for direct cloud pulling when enabled.
+                </li>
+              </ol>
+            )}
+
+            {platform === 'apple' && (
+              <ol className="mt-3 list-decimal space-y-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4 pl-7 text-xs text-[var(--text-primary)]">
+                <li>
+                  Use the <strong>Generate Direct Phone Sync Link &amp; QR</strong> button above (no
+                  manual header configuration required).
+                </li>
+                <li>
+                  Install <strong>Health Auto Export</strong> on iPhone or create an{' '}
+                  <strong>Apple Shortcuts</strong> automation reading Apple Watch Heart Rate, HRV,
+                  SpO₂, Steps, and Sleep.
+                </li>
+                <li>
+                  Set method to <code className="font-[family-name:var(--font-mono)]">POST</code>{' '}
+                  with JSON export enabled — Health Auto Export metrics normalize automatically.
+                </li>
+              </ol>
+            )}
 
             {platform === 'curl' && (
               <div className="mt-3 min-w-0">
@@ -560,80 +929,46 @@ export function WatchSyncHub({ patientId, adapters = [], onSyncComplete }: Watch
                 </pre>
               </div>
             )}
-
-            {platform === 'apple' && (
-              <ol className="mt-3 list-decimal space-y-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4 pl-7 text-xs text-[var(--text-primary)]">
-                <li>
-                  Generate a device key below in <strong>Wearable API Keys</strong> and copy it.
-                </li>
-                <li>
-                  Install <strong>Health Auto Export</strong> on iPhone or create an{' '}
-                  <strong>Apple Shortcuts</strong> automation reading Apple Watch Heart Rate, HRV,
-                  SpO₂, Steps, and Sleep.
-                </li>
-                <li>
-                  Set method to <code className="font-[family-name:var(--font-mono)]">POST</code>{' '}
-                  <code className="font-[family-name:var(--font-mono)]">{webhookUrl}</code> with
-                  header <code className="font-[family-name:var(--font-mono)]">x-api-key</code> and
-                  JSON export enabled — Health Auto Export metrics normalize automatically.
-                </li>
-              </ol>
-            )}
-
-            {platform === 'android' && (
-              <ol className="mt-3 list-decimal space-y-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4 pl-7 text-xs text-[var(--text-primary)]">
-                <li>
-                  Works with Galaxy Watch, Pixel Watch, Amazfit, Xiaomi, Garmin, OnePlus &amp;
-                  Noise/boAt synced into <strong>Android Health Connect</strong> or{' '}
-                  <strong>Gadgetbridge</strong>.
-                </li>
-                <li>
-                  Configure HTTP Sync / Tasker / Home Assistant webhook to{' '}
-                  <code className="font-[family-name:var(--font-mono)]">POST</code> flat fields (
-                  <code className="font-[family-name:var(--font-mono)]">
-                    heartRate, spo2, steps, sleepMinutes, hrv
-                  </code>
-                  ) with your <code className="font-[family-name:var(--font-mono)]">x-api-key</code>{' '}
-                  to <code className="font-[family-name:var(--font-mono)]">{webhookUrl}</code>.
-                </li>
-                <li>
-                  Or use the <strong>Open Wearables</strong> / <strong>Google Health</strong> sync
-                  actions below for cloud-to-cloud pulling.
-                </li>
-              </ol>
-            )}
           </div>
 
           <div className="mt-4 border-t border-[var(--border-subtle)] pt-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
                 <Smartphone className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Cloud Bridges (Pull Last 24h)</span>
+                <span>Cloud Bridges (Pull Last 48h)</span>
               </span>
               <div className="flex flex-wrap gap-2">
-                {adapters.map((adapter) => (
-                  <button
-                    key={adapter.provider}
-                    type="button"
-                    onClick={() => void triggerProviderSync(adapter)}
-                    disabled={!patientId || syncingProvider !== null}
-                    className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-1.5 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50 cursor-pointer"
-                  >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 ${
-                        syncingProvider === adapter.provider ? 'animate-spin' : ''
-                      }`}
-                      aria-hidden="true"
-                    />
-                    <span>
-                      {syncingProvider === adapter.provider
-                        ? 'Syncing...'
-                        : adapter.provider === 'google_health_api'
-                          ? 'Sync Google Health'
-                          : 'Sync Open Wearables'}
-                    </span>
-                  </button>
-                ))}
+                {adapters.map((adapter) => {
+                  const unconfMsg =
+                    adapter.provider === 'open_wearables' && !adapter.configured
+                      ? adapter.message
+                      : undefined;
+                  const buttonLabel =
+                    adapter.provider === 'google_fit'
+                      ? 'Sync Google Fit'
+                      : adapter.provider === 'google_health_api'
+                        ? 'Sync Google Health'
+                        : 'Sync Open Wearables';
+                  return (
+                    <button
+                      key={adapter.provider}
+                      type="button"
+                      onClick={() => void triggerProviderSync(adapter.provider, unconfMsg)}
+                      disabled={!patientId || syncingProvider !== null}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-1.5 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50 cursor-pointer"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${
+                          syncingProvider === adapter.provider ? 'animate-spin' : ''
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        {syncingProvider === adapter.provider ? 'Syncing...' : buttonLabel}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

@@ -23,10 +23,40 @@ afterAll(async () => {
 });
 
 describe('Phase 7 Voice Check-In Parser, Caregiver Reply Commands & RxNorm Meds', () => {
-  it('parses multilingual voice check-ins and flags red-flag symptoms safely', () => {
+  it('parses multilingual greetings, everyday problems, vitals questions, and red-flag symptoms naturally', () => {
+    const helloRes = analyzeVoiceCheckin('Hello!', 'en', '112', { patientFirstName: 'Ramesh' });
+    expect(helloRes.intent).toBe('greeting');
+    expect(helloRes.shouldLogCheckin).toBe(false);
+    expect(helloRes.redFlag).toBe(false);
+    expect(helloRes.replyText).toMatch(/Hello Ramesh/i);
+
+    const kneeRes = analyzeVoiceCheckin('My knee has been hurting since morning', 'en');
+    expect(kneeRes.intent).toBe('symptom');
+    expect(kneeRes.symptoms).toContain('joint_pain');
+    expect(kneeRes.shouldLogCheckin).toBe(true);
+    expect(kneeRes.redFlag).toBe(false);
+    expect(kneeRes.replyText.toLowerCase()).toContain('joint pain');
+
+    const vitalsRes = analyzeVoiceCheckin('How is my heart rate?', 'en', '112', {
+      latestLevel: 'stable',
+      latestIndex: 12,
+      recentHeartRate: 68,
+      recentSpo2: 98,
+    });
+    expect(vitalsRes.intent).toBe('question_vitals');
+    expect(vitalsRes.shouldLogCheckin).toBe(false);
+    expect(vitalsRes.replyText).toContain('68 bpm');
+    expect(vitalsRes.replyText).toContain('98%');
+
+    const customRes = analyzeVoiceCheckin('The weather is very humid today', 'en');
+    expect(customRes.intent).toBe('general_conversation');
+    expect(customRes.shouldLogCheckin).toBe(false);
+    expect(customRes.replyText).toContain('The weather is very humid today');
+
     const okRes = analyzeVoiceCheckin('I am fine today', 'en');
     expect(okRes.severity).toBe('none');
     expect(okRes.redFlag).toBe(false);
+    expect(okRes.shouldLogCheckin).toBe(true);
 
     const redEn = analyzeVoiceCheckin('Having chest tightness and short of breath', 'en', '112');
     expect(redEn.redFlag).toBe(true);

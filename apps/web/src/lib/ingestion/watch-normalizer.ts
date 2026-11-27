@@ -224,6 +224,286 @@ function buildValidatedSample(candidate: Record<string, unknown>): VitalSampleIn
   return parsed.success ? parsed.data : null;
 }
 
+function readNestedNumber(
+  raw: unknown,
+  nestedKeys: readonly string[] = ['value', 'inCelsius', 'inFahrenheit', 'inMillimetersOfMercury', 'inKilograms', 'inMilligramsPerDeciliter'],
+): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim().length > 0 && Number.isFinite(Number(raw))) {
+    return Number(raw);
+  }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj.inMillimolesPerLiter === 'number' && Number.isFinite(obj.inMillimolesPerLiter)) {
+      return Number((obj.inMillimolesPerLiter * 18.0182).toFixed(1));
+    }
+    for (const k of nestedKeys) {
+      if (typeof obj[k] === 'number' && Number.isFinite(obj[k] as number)) {
+        return obj[k] as number;
+      }
+    }
+  }
+  return null;
+}
+
+const HC_ARRAY_GROUPS: ReadonlyArray<{
+  keys: readonly string[];
+  kind:
+    | 'heart_rate'
+    | 'resting_heart_rate'
+    | 'hrv_rmssd'
+    | 'spo2'
+    | 'respiratory_rate'
+    | 'body_temperature'
+    | 'steps'
+    | 'sleep_sessions'
+    | 'blood_pressure'
+    | 'blood_glucose'
+    | 'weight_kg';
+}> = [
+  { keys: ['heart_rate', 'heartRate', 'HeartRate', 'HeartRateRecord'], kind: 'heart_rate' },
+  {
+    keys: ['resting_heart_rate', 'restingHeartRate', 'RestingHeartRate', 'RestingHeartRateRecord'],
+    kind: 'resting_heart_rate',
+  },
+  {
+    keys: [
+      'heart_rate_variability_rmssd',
+      'heartRateVariabilityRmssd',
+      'HeartRateVariabilityRmssd',
+      'HeartRateVariabilityRmssdRecord',
+    ],
+    kind: 'hrv_rmssd',
+  },
+  {
+    keys: ['oxygen_saturation', 'oxygenSaturation', 'OxygenSaturation', 'OxygenSaturationRecord'],
+    kind: 'spo2',
+  },
+  {
+    keys: ['respiratory_rate', 'respiratoryRate', 'RespiratoryRate', 'RespiratoryRateRecord'],
+    kind: 'respiratory_rate',
+  },
+  {
+    keys: ['body_temperature', 'bodyTemperature', 'BodyTemperature', 'BodyTemperatureRecord'],
+    kind: 'body_temperature',
+  },
+  { keys: ['steps', 'Steps', 'StepsRecord'], kind: 'steps' },
+  {
+    keys: ['sleep_sessions', 'sleepSessions', 'SleepSession', 'SleepSessionRecord', 'sleep'],
+    kind: 'sleep_sessions',
+  },
+  {
+    keys: ['blood_pressure', 'bloodPressure', 'BloodPressure', 'BloodPressureRecord'],
+    kind: 'blood_pressure',
+  },
+  {
+    keys: ['blood_glucose', 'bloodGlucose', 'BloodGlucose', 'BloodGlucoseRecord'],
+    kind: 'blood_glucose',
+  },
+  { keys: ['weight', 'Weight', 'WeightRecord'], kind: 'weight_kg' },
+];
+
+/**
+ * Extracts Android Health Connect records pushed directly from background companion apps
+ * such as HC Webhook (`mcnaveen/health-connect-webhook`) or Tasker/HTTP Shortcuts.
+ */
+function extractHealthConnectWebhookSamples(
+  container: Record<string, unknown>,
+  rootTimestamp: string,
+  rootContext: ActivityContext,
+  source: ProviderSource,
+  rootDevice: string | undefined,
+): { matchedHealthConnect: boolean; samples: VitalSampleInput[]; ignored: string[] } {
+  const samples: VitalSampleInput[] = [];
+  const ignored: string[] = [];
+  let matchedHealthConnect = false;
+
+  for (const group of HC_ARRAY_GROUPS) {
+    let matchedKey: string | undefined;
+    let records: unknown[] | undefined;
+    for (const k of group.keys) {
+      if (Array.isArray(container[k])) {
+        matchedKey = k;
+        records = container[k] as unknown[];
+        break;
+      }
+    }
+    if (!matchedKey || !records) continue;
+    matchedHealthConnect = true;
+
+    for (const rawRec of records) {
+      if (!rawRec || typeof rawRec !== 'object') continue;
+      const rec = rawRec as Record<string, unknown>;
+      const meta =
+        rec.metadata && typeof rec.metadata === 'object'
+          ? (rec.metadata as Record<string, unknown>)
+          : undefined;
+      const recDevice =
+        (typeof meta?.dataOrigin === 'string' && meta.dataOrigin) ||
+        (typeof rec.deviceModel === 'string' && rec.deviceModel) ||
+        rootDevice ||
+        'Android Health Connect';
+      const externalId = typeof meta?.id === 'string' ? meta.id : undefined;
+
+      if (group.kind === 'heart_rate') {
+        const innerSamples = Array.isArray(rec.samples) ? rec.samples : [rec];
+        for (const s of innerSamples) {
+          if (!s || typeof s !== 'object') continue;
+          const pt = s as Record<string, unknown>;
+          const bpm = readNestedNumber(pt.beatsPerMinute ?? pt.bpm ?? pt.value);
+          if (bpm === null) {
+            ignored.push(matchedKey);
+            continue;
+          }
+          const validated = buildValidatedSample({
+            metricType: 'heart_rate',
+            value: bpm,
+            unit: 'bpm',
+            recordedAt: toOffsetIso(pt.time ?? rec.startTime ?? rec.endTime, rootTimestamp),
+            context: rootContext === 'unknown' ? 'rest' : rootContext,
+            source,
+            deviceModel: recDevice,
+            externalId,
+          });
+          if (validated) samples.push(validated);
+        }
+        continue;
+      }
+
+      if (group.kind === 'sleep_sessions') {
+        const startStr = typeof rec.startTime === 'string' ? rec.startTime : undefined;
+        const endStr = typeof rec.endTime === 'string' ? rec.endTime : undefined;
+        let minutes = readNestedNumber(rec.durationMinutes ?? rec.minutesAsleep ?? rec.value);
+        if (minutes === null && startStr && endStr) {
+          const stages = Array.isArray(rec.stages) ? rec.stages : [];
+          if (stages.length > 0) {
+            let asleepMs = 0;
+            for (const st of stages) {
+              if (!st || typeof st !== 'object') continue;
+              const stageObj = st as Record<string, unknown>;
+              const stName = String(stageObj.stage ?? '').toLowerCase();
+              if (stName === 'awake' || stName === 'out_of_bed') continue;
+              const sMs = Date.parse(String(stageObj.startTime ?? ''));
+              const eMs = Date.parse(String(stageObj.endTime ?? ''));
+              if (Number.isFinite(sMs) && Number.isFinite(eMs) && eMs > sMs) {
+                asleepMs += eMs - sMs;
+              }
+            }
+            if (asleepMs > 0) minutes = Math.round(asleepMs / 60_000);
+          }
+          if (minutes === null) {
+            const sMs = Date.parse(startStr);
+            const eMs = Date.parse(endStr);
+            if (Number.isFinite(sMs) && Number.isFinite(eMs) && eMs > sMs) {
+              minutes = Math.round((eMs - sMs) / 60_000);
+            }
+          }
+        }
+        if (minutes !== null && minutes > 0) {
+          const validated = buildValidatedSample({
+            metricType: 'sleep_duration_min',
+            value: Math.min(1440, minutes),
+            unit: 'min',
+            recordedAt: toOffsetIso(endStr ?? startStr ?? rec.time, rootTimestamp),
+            context: 'sleep',
+            source,
+            deviceModel: recDevice,
+            externalId,
+          });
+          if (validated) samples.push(validated);
+        } else {
+          ignored.push(matchedKey);
+        }
+        continue;
+      }
+
+      const spec: { metric: MetricType; unit: string; val: number | null; ctx: ActivityContext } =
+        group.kind === 'resting_heart_rate'
+          ? {
+              metric: 'resting_heart_rate',
+              unit: 'bpm',
+              val: readNestedNumber(rec.beatsPerMinute ?? rec.bpm ?? rec.value),
+              ctx: 'sleep',
+            }
+          : group.kind === 'hrv_rmssd'
+            ? {
+                metric: 'hrv_rmssd',
+                unit: 'ms',
+                val: readNestedNumber(rec.heartRateVariabilityMillis ?? rec.rmssd ?? rec.value),
+                ctx: 'sleep',
+              }
+            : group.kind === 'spo2'
+              ? {
+                  metric: 'spo2',
+                  unit: '%',
+                  val: readNestedNumber(rec.percentage ?? rec.spo2 ?? rec.value),
+                  ctx: 'rest',
+                }
+              : group.kind === 'respiratory_rate'
+                ? {
+                    metric: 'respiratory_rate',
+                    unit: 'breaths/min',
+                    val: readNestedNumber(rec.rate ?? rec.value),
+                    ctx: 'rest',
+                  }
+                : group.kind === 'body_temperature'
+                  ? {
+                      metric: 'body_temperature',
+                      unit: 'degC',
+                      val: readNestedNumber(rec.temperature ?? rec.value),
+                      ctx: rootContext,
+                    }
+                  : group.kind === 'steps'
+                    ? {
+                        metric: 'steps',
+                        unit: 'count',
+                        val: readNestedNumber(rec.count ?? rec.steps ?? rec.value),
+                        ctx: 'light_activity',
+                      }
+                    : group.kind === 'blood_pressure'
+                      ? {
+                          metric: 'systolic_bp',
+                          unit: 'mmHg',
+                          val: readNestedNumber(rec.systolic ?? rec.value),
+                          ctx: 'rest',
+                        }
+                      : group.kind === 'blood_glucose'
+                        ? {
+                            metric: 'blood_glucose',
+                            unit: 'mg/dL',
+                            val: readNestedNumber(rec.level ?? rec.glucose ?? rec.value),
+                            ctx: rootContext,
+                          }
+                        : {
+                            metric: 'weight_kg',
+                            unit: 'kg',
+                            val: readNestedNumber(rec.weight ?? rec.value),
+                            ctx: rootContext,
+                          };
+
+      if (spec.val === null) {
+        ignored.push(matchedKey);
+        continue;
+      }
+
+      const validated = buildValidatedSample({
+        metricType: spec.metric,
+        value: spec.val,
+        unit: typeof rec.unit === 'string' && rec.unit.trim() ? rec.unit.trim() : spec.unit,
+        recordedAt: toOffsetIso(rec.time ?? rec.endTime ?? rec.startTime, rootTimestamp),
+        context: rootContext === 'unknown' ? spec.ctx : rootContext,
+        source,
+        deviceModel: recDevice,
+        externalId,
+      });
+      if (validated) samples.push(validated);
+      else ignored.push(matchedKey);
+    }
+  }
+
+  return { matchedHealthConnect, samples, ignored };
+}
+
 /**
  * Normalizes smartwatch webhook payloads from companion apps (iOS Apple Shortcuts /
  * Health Auto Export, Android Health Connect / Tasker / Gadgetbridge, or custom REST JSON)
@@ -339,12 +619,39 @@ export function normalizeWatchPayload(rawBody: unknown): NormalizedWatchPayload 
     }
   }
 
+  // 2.5 Android Health Connect companion webhook shapes (HC Webhook / HealthConnectWebhook)
+  const hasExplicitSource = typeof root.source === 'string' && root.source.trim().length > 0;
+  const hcSource: ProviderSource = hasExplicitSource ? rootSource : 'health_connect';
+  const hcRoot = extractHealthConnectWebhookSamples(
+    root,
+    rootTimestamp,
+    rootContext,
+    hcSource,
+    rootDevice,
+  );
+  const hcNested =
+    dataObj && !Array.isArray(dataObj.metrics)
+      ? extractHealthConnectWebhookSamples(dataObj, rootTimestamp, rootContext, hcSource, rootDevice)
+      : { matchedHealthConnect: false, samples: [], ignored: [] };
+
+  samples.push(...hcRoot.samples, ...hcNested.samples);
+  ignoredFields.push(...hcRoot.ignored, ...hcNested.ignored);
+  const resolvedSource: ProviderSource =
+    !hasExplicitSource && (hcRoot.matchedHealthConnect || hcNested.matchedHealthConnect)
+      ? 'health_connect'
+      : rootSource;
+
   // 3. Flat smartwatch JSON snapshot ({ heartRate, spo2, steps, sleepMinutes, ... })
   for (const fieldDef of FLAT_FIELD_TO_METRIC) {
     let rawValue: unknown;
     let matchedKey: string | undefined;
     for (const k of fieldDef.keys) {
-      if (root[k] !== undefined && root[k] !== null && root[k] !== '') {
+      if (
+        root[k] !== undefined &&
+        root[k] !== null &&
+        root[k] !== '' &&
+        typeof root[k] !== 'object'
+      ) {
         rawValue = root[k];
         matchedKey = k;
         break;
@@ -379,7 +686,7 @@ export function normalizeWatchPayload(rawBody: unknown): NormalizedWatchPayload 
   return {
     patientId: rootPatientId,
     idempotencyKey,
-    source: rootSource,
+    source: resolvedSource,
     evaluate,
     samples,
     ignoredFields,

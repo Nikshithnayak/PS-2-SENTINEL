@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { BellRing, Printer, ShieldAlert, Stethoscope, Users } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
+import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { StatusBadge, SyntheticBadge } from '@/components/health/status-badge';
 import { SentinelShell } from '@/components/sentinel-shell';
@@ -165,6 +166,10 @@ export default function ClinicianDashboardPage() {
       }
     >
       <main className="space-y-6">
+        <RoleWorkspaceGuard
+          allowedRoles={['clinician', 'org_admin']}
+          workspaceName="Clinician Triage & Deep-Dive"
+        >
         {isUnauth ? (
           <SignedOutGate heading="Sign in to open Clinician View" />
         ) : (
@@ -265,11 +270,10 @@ export default function ClinicianDashboardPage() {
                             key={w}
                             type="button"
                             onClick={() => setWindowSpan(w)}
-                            className={`min-h-9 rounded-lg px-3 text-xs font-semibold cursor-pointer ${
-                              windowSpan === w
-                                ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)]'
-                                : ''
-                            }`}
+                            className={`min-h-9 rounded-lg px-3 text-xs font-semibold cursor-pointer ${windowSpan === w
+                              ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)]'
+                              : ''
+                              }`}
                           >
                             {w}
                           </button>
@@ -489,6 +493,7 @@ export default function ClinicianDashboardPage() {
             </section>
           </>
         )}
+        </RoleWorkspaceGuard>
       </main>
     </SentinelShell>
   );

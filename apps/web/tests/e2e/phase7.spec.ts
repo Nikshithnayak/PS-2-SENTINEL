@@ -33,6 +33,11 @@ test.describe('Phase 7 Voice Check-In, Inbox Reply Webhook & Medications E2E', (
       expectedUrlPart: '/caregiver',
     });
 
+    // Verify Caregiver receives dedicated Caregiver Monitor navigation & boundary guard
+    await expect(page.getByTestId('role-workspace-badge')).toContainText('Caregiver Monitor');
+    await expect(page.getByRole('link', { name: 'Today & Voice Chat' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Cohort Triage' })).toHaveCount(0);
+
     await signUpViaUi(page, {
       name: 'Mohan Hegde',
       email: patientEmail,
@@ -41,12 +46,20 @@ test.describe('Phase 7 Voice Check-In, Inbox Reply Webhook & Medications E2E', (
       expectedUrlPart: '/today',
     });
 
+    await expect(page.getByTestId('role-workspace-badge')).toContainText('Elder Care View');
+    await expect(page.getByRole('link', { name: 'Family Monitor' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Cohort Triage' })).toHaveCount(0);
+
     // Invite caregiver so email reply webhook resolves authentic care-circle member
     await page.goto('/settings/consent');
     await page.getByLabel('Caregiver or clinician email').fill(caregiverEmail);
     await page.getByLabel('Relationship').selectOption('primary_caregiver');
     await page.getByRole('button', { name: 'Invite' }).click();
     await expect(page.getByText('Meera Hegde').first()).toBeVisible();
+
+    // Patient visiting Clinician console is safely routed back to Elder Care View
+    await page.goto('/clinician');
+    await expect(page.getByRole('link', { name: /Open Elder Care View/i })).toBeVisible();
 
     const medRes = await page.request.post('/api/v1/medications', {
       data: {
@@ -58,9 +71,21 @@ test.describe('Phase 7 Voice Check-In, Inbox Reply Webhook & Medications E2E', (
     });
     expect(medRes.status()).toBe(201);
 
-    // 1. /today Elder Voice Companion red-flag escalation + Medication Taken tap
+    // 1. /today Natural Conversational Companion + Red-Flag Escalation + Medication Taken tap
     await page.goto('/today');
-    await page.getByRole('button', { name: /Short of breath and chest tightness/i }).click();
+    const voiceInput = page.locator('#voice-transcript-input');
+    const sendBtn = page.getByRole('button', { name: 'Send', exact: true });
+
+    await voiceInput.fill('Hello!');
+    await sendBtn.click();
+    await expect(page.getByTestId('voice-companion-reply')).toContainText(/Hello Mohan/i);
+
+    await voiceInput.fill('My knee has been hurting since morning');
+    await sendBtn.click();
+    await expect(page.getByTestId('voice-companion-reply')).toContainText(/joint pain/i);
+
+    await voiceInput.fill('Short of breath and chest tightness');
+    await sendBtn.click();
     await expect(page.getByTestId('voice-companion-reply')).toContainText('112');
 
     await page.getByRole('button', { name: /Mark Taken/i }).first().click();

@@ -2,31 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  Activity,
-  BellRing,
-  Database,
-  FileText,
-  HeartHandshake,
-  LineChart,
-  Settings,
-  ShieldCheck,
-  Stethoscope,
-  Users,
-} from 'lucide-react';
+import type { Role } from '@sentinel/shared';
+import { Activity } from 'lucide-react';
 import { SyntheticBadge } from '@/components/health/status-badge';
-
-const NAV_LINKS = [
-  { href: '/today', label: 'Today', icon: HeartHandshake },
-  { href: '/signals', label: 'Trends', icon: LineChart },
-  { href: '/alerts', label: 'Alerts', icon: BellRing },
-  { href: '/caregiver', label: 'Caregiver', icon: ShieldCheck },
-  { href: '/clinician', label: 'Clinician', icon: Stethoscope },
-  { href: '/clinician/report', label: 'Reports', icon: FileText },
-  { href: '/ingest', label: 'Import', icon: Database },
-  { href: '/settings/consent', label: 'Consent', icon: Users },
-  { href: '/settings', label: 'Settings', icon: Settings },
-];
+import { authClient } from '@/lib/auth-client';
+import { getRoleWorkspaceConfig } from '@/lib/roles';
 
 export function SentinelNav({
   title,
@@ -38,13 +18,17 @@ export function SentinelNav({
   rightSlot?: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { data: session } = authClient.useSession();
+  const userRole = ((session?.user as { role?: Role } | undefined)?.role ?? 'patient') as Role;
+  const workspace = getRoleWorkspaceConfig(userRole);
+  const roleLinks = workspace.sidebarGroups.flatMap((g) => g.items);
 
   return (
     <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/92 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
         <div className="flex min-w-0 flex-wrap items-center gap-2.5">
           <Link
-            href="/"
+            href={session?.user ? workspace.homeHref : '/'}
             className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-3 text-sm font-semibold text-[var(--brand-primary-fg)]"
           >
             <Activity className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -59,7 +43,7 @@ export function SentinelNav({
         </div>
 
         <nav aria-label="Workspace views" className="flex flex-wrap items-center gap-1.5">
-          {NAV_LINKS.map((item) => {
+          {roleLinks.map((item) => {
             const Icon = item.icon;
             const active =
               item.href === '/clinician'
@@ -69,7 +53,7 @@ export function SentinelNav({
                   : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
-                key={item.href}
+                key={`${item.href}-${item.label}`}
                 href={item.href}
                 className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition sm:text-sm ${
                   active

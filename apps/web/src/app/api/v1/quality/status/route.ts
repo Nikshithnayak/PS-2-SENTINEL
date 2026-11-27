@@ -8,7 +8,15 @@ import {
   vitalRollupsHourly,
   vitalSamples,
 } from '@/db/schema';
-import { GoogleHealthAdapter, OpenWearablesAdapter } from '@/lib/ingestion/adapters/providers';
+import {
+  GoogleFitAdapter,
+  GoogleHealthAdapter,
+  OpenWearablesAdapter,
+} from '@/lib/ingestion/adapters/providers';
+import {
+  getGoogleConnectorsStatus,
+  resolveRequestOrigin,
+} from '@/lib/ingestion/connectors/google-cloud-health';
 import { evaluateDeviceSilence } from '@/lib/ingestion/quality';
 import { checkPatientScope, requireSession } from '@/lib/session';
 
@@ -47,8 +55,10 @@ export async function GET(request: NextRequest) {
   }
 
   const silence = await evaluateDeviceSilence(patientId);
-  const ow = new OpenWearablesAdapter().healthCheck();
+  const gf = new GoogleFitAdapter().healthCheck();
   const gh = new GoogleHealthAdapter().healthCheck();
+  const ow = new OpenWearablesAdapter().healthCheck();
+  const googleConnectors = await getGoogleConnectorsStatus(ctx.userId, resolveRequestOrigin(request));
 
   const summary = await withSystemDb(async (tx) => {
     const batches = await tx
@@ -89,7 +99,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     patientId,
     silence,
-    adapters: [ow, gh],
+    adapters: [gf, gh, ow],
+    googleConnectors,
     ...summary,
   });
 }

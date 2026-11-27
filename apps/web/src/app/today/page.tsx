@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
 import { ActivityRingCard } from '@/components/health/activity-ring-card';
+import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { SleepQualityCard } from '@/components/health/sleep-quality-card';
 import { StatusBadge } from '@/components/health/status-badge';
@@ -333,11 +334,10 @@ export default function PatientTodayPage() {
               key={code}
               type="button"
               onClick={() => setLang(code)}
-              className={`min-h-10 rounded-lg px-3 text-sm font-bold transition cursor-pointer ${
-                lang === code
-                  ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
-                  : 'text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
-              }`}
+              className={`min-h-10 rounded-lg px-3 text-sm font-bold transition cursor-pointer ${lang === code
+                ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
+                : 'text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+                }`}
             >
               {code === 'en' ? 'EN' : code === 'kn' ? 'ಕನ್ನಡ' : 'हिन्दी'}
             </button>
@@ -346,6 +346,7 @@ export default function PatientTodayPage() {
       }
     >
       <main className="space-y-6 text-[18px]">
+        <RoleWorkspaceGuard allowedRoles={['patient']} workspaceName="Patient Today (Elder Mode)">
         {isUnauth ? (
           <SignedOutGate heading="Sign in for Patient Today view" />
         ) : (
@@ -484,11 +485,10 @@ export default function PatientTodayPage() {
                         key={m.id}
                         type="button"
                         onClick={() => setChartMetric(m.id)}
-                        className={`min-h-9 rounded-lg px-2.5 text-xs font-semibold transition cursor-pointer ${
-                          chartMetric === m.id
-                            ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)]'
-                            : 'bg-[var(--bg-surface)] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
-                        }`}
+                        className={`min-h-9 rounded-lg px-2.5 text-xs font-semibold transition cursor-pointer ${chartMetric === m.id
+                          ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)]'
+                          : 'bg-[var(--bg-surface)] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+                          }`}
                       >
                         {m.label}
                       </button>
@@ -540,7 +540,7 @@ export default function PatientTodayPage() {
                     </p>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">
                       {rhrQuery.data?.baseline?.bandLow != null &&
-                      rhrQuery.data?.baseline?.bandHigh != null
+                        rhrQuery.data?.baseline?.bandHigh != null
                         ? `Your normal: ${rhrQuery.data.baseline.bandLow}–${rhrQuery.data.baseline.bandHigh} bpm`
                         : 'Personal baseline learning'}
                     </p>
@@ -556,7 +556,7 @@ export default function PatientTodayPage() {
                     </p>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">
                       {spo2Query.data?.baseline?.bandLow != null &&
-                      spo2Query.data?.baseline?.bandHigh != null
+                        spo2Query.data?.baseline?.bandHigh != null
                         ? `Your normal: ${spo2Query.data.baseline.bandLow}–${spo2Query.data.baseline.bandHigh}%`
                         : 'Personal baseline learning'}
                     </p>
@@ -668,11 +668,10 @@ export default function PatientTodayPage() {
                                       : [...prev, sym],
                                   )
                                 }
-                                className={`min-h-11 rounded-xl border px-3 text-sm font-semibold cursor-pointer ${
-                                  active
-                                    ? 'border-[var(--status-watch)] bg-[var(--status-watch)] text-white'
-                                    : 'border-[var(--border-subtle)] bg-[var(--bg-surface)]'
-                                }`}
+                                className={`min-h-11 rounded-xl border px-3 text-sm font-semibold cursor-pointer ${active
+                                  ? 'border-[var(--status-watch)] bg-[var(--status-watch)] text-white'
+                                  : 'border-[var(--border-subtle)] bg-[var(--bg-surface)]'
+                                  }`}
                               >
                                 {sym}
                               </button>
@@ -793,6 +792,7 @@ export default function PatientTodayPage() {
             />
           </>
         )}
+        </RoleWorkspaceGuard>
       </main>
     </SentinelShell>
   );

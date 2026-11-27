@@ -13,6 +13,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
+import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { StatusBadge, SyntheticBadge } from '@/components/health/status-badge';
 import { SentinelShell } from '@/components/sentinel-shell';
@@ -60,6 +61,7 @@ interface CaregiverDashboardData {
     id: string;
     kind: string;
     severity: string;
+    transcript: string | null;
     symptoms: string[];
     recordedAt: string;
   }>;
@@ -181,6 +183,10 @@ export default function CaregiverConsolePage() {
       }
     >
       <main className="space-y-6">
+        <RoleWorkspaceGuard
+          allowedRoles={['caregiver', 'org_admin']}
+          workspaceName="Caregiver Monitor"
+        >
         {isUnauth ? (
           <SignedOutGate heading="Sign in to access Caregiver Console" />
         ) : (
@@ -269,7 +275,8 @@ export default function CaregiverConsolePage() {
                     </span>
                     <p className="mt-2 text-base font-bold">
                       {detailQuery.data.checkins[0]
-                        ? detailQuery.data.checkins[0].kind === 'tap_ok'
+                        ? detailQuery.data.checkins[0].kind === 'tap_ok' ||
+                          detailQuery.data.checkins[0].severity === 'none'
                           ? 'Feels Okay'
                           : `Needs Check-In (${detailQuery.data.checkins[0].severity})`
                         : 'No check-in yet'}
@@ -391,12 +398,40 @@ export default function CaregiverConsolePage() {
 
                     <div className="clinical-card p-5 sm:p-6">
                       <h2 className="font-[family-name:var(--font-display)] text-lg font-bold">
-                        Latest Change Explanation &amp; Safety Actions
+                        Recent Check-Ins &amp; Safety Actions
                       </h2>
                       <p className="mt-2 text-sm text-[var(--text-primary)]">
                         {detailQuery.data.latestAssessment?.explanationEn ??
                           'Awaiting initial baseline assessment.'}
                       </p>
+
+                      {detailQuery.data.checkins.length > 0 && (
+                        <ul className="mt-3 space-y-2 text-xs">
+                          {detailQuery.data.checkins.slice(0, 3).map((chk) => (
+                            <li
+                              key={chk.id}
+                              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3"
+                            >
+                              <div className="flex items-center justify-between gap-2 font-semibold">
+                                <span className="capitalize">
+                                  {chk.kind === 'tap_ok'
+                                    ? 'Elder Feels Okay'
+                                    : `${chk.kind.replace('_', ' ')} (${chk.severity})`}
+                                </span>
+                                <span className="text-[var(--text-muted)]">
+                                  {new Date(chk.recordedAt).toLocaleTimeString()}
+                                </span>
+                              </div>
+                              {chk.transcript && (
+                                <p className="mt-1 text-[var(--text-primary)]">
+                                  &ldquo;{chk.transcript}&rdquo;
+                                </p>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
                       <ul className="mt-3 space-y-2 text-xs text-[var(--text-muted)]">
                         {(detailQuery.data.latestAssessment?.contributions ?? [])
                           .slice(0, 4)
@@ -414,11 +449,11 @@ export default function CaregiverConsolePage() {
                       </ul>
                       <div className="mt-5 flex flex-wrap gap-3">
                         <Link
-                          href="/clinician"
+                          href="/ingest"
                           className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 text-xs font-semibold hover:bg-[var(--bg-elevated)]"
                         >
                           <ShieldAlert className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
-                          Inspect Charts
+                          Help Connect Elder Watch / Phone
                         </Link>
                         <Link
                           href="/alerts"
@@ -435,6 +470,7 @@ export default function CaregiverConsolePage() {
             )}
           </>
         )}
+        </RoleWorkspaceGuard>
       </main>
     </SentinelShell>
   );

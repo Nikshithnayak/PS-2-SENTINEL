@@ -2,13 +2,17 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { maybeTriggerAlertFromEvaluation } from '@/lib/alerts/outbox';
 import { runAndPersistEvaluation } from '@/lib/engine/client';
-import { GoogleHealthAdapter, OpenWearablesAdapter } from '@/lib/ingestion/adapters/providers';
-import { resolveSessionPatientScope } from '@/lib/ingestion/auth';
+import { GoogleFitAdapter, GoogleHealthAdapter, OpenWearablesAdapter } from '@/lib/ingestion/adapters/providers';
+import { resolveIngestAuth, resolveSessionPatientScope } from '@/lib/ingestion/auth';
+import {
+  getValidGoogleConnectorToken,
+  resolveRequestOrigin,
+} from '@/lib/ingestion/connectors/google-cloud-health';
 import { ingestVitalBatch } from '@/lib/ingestion/quality';
 import { requireSession } from '@/lib/session';
 
 const SyncProviderSchema = z.object({
-  provider: z.enum(['open_wearables', 'google_health_api']),
+  provider: z.enum(['open_wearables', 'google_fit', 'google_health_api']),
   patientId: z.string().uuid().optional(),
   externalUserId: z.string().min(1).max(160).optional(),
   accessToken: z.string().min(1).max(2048).optional(),
@@ -35,9 +39,11 @@ export async function POST(request: NextRequest) {
   const { patientId } = scoped;
 
   const adapter =
-    parsed.data.provider === 'google_health_api'
-      ? new GoogleHealthAdapter()
-      : new OpenWearablesAdapter();
+    parsed.data.provider === 'google_fit'
+      ? new GoogleFitAdapter()
+      : parsed.data.provider === 'google_health_api'
+        ? new GoogleHealthAdapter()
+        : new OpenWearablesAdapter();
 
   const health = adapter.healthCheck();
   if (!health.configured) {
@@ -51,13 +57,33 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (parsed.data.provider === 'google_health_api' && !parsed.data.accessToken) {
+  let effectiveAccessToken = parsed.data.accessToken;
+  if (
+    (parsed.data.provider === 'google_fit' || parsed.data.provider === 'google_health_api') &&
+    !effectiveAccessToken
+  ) {
+    const stored = await getValidGoogleConnectorToken({
+      userId: ctx.userId,
+      mode: parsed.data.provider,
+      origin: resolveRequestOrigin(request),
+    });
+    effectiveAccessToken = stored?.accessToken;
+  }
+
+  if (
+    (parsed.data.provider === 'google_fit' || parsed.data.provider === 'google_health_api') &&
+    !effectiveAccessToken
+  ) {
+    const modeParam = parsed.data.provider === 'google_health_api' ? 'health' : 'fit';
     return NextResponse.json(
       {
         error:
-          'Google Health API sync requires a valid user OAuth accessToken with Google Health / Fitness vitals scope.',
-        status: 'missing_token',
-        provider: 'google_health_api',
+          parsed.data.provider === 'google_fit'
+            ? 'Connect your Google Fit account first using the "Connect Google Fit" button.'
+            : 'Connect Google Health API v4 first using the "Connect Google Health" button.',
+        status: 'not_connected',
+        connectUrl: `/api/v1/connectors/google/connect?mode=${modeParam}`,
+        provider: parsed.data.provider,
       },
       { status: 400 },
     );
@@ -72,7 +98,7 @@ export async function POST(request: NextRequest) {
       externalUserId: parsed.data.externalUserId ?? patientId,
       startIso,
       endIso,
-      accessToken: parsed.data.accessToken,
+      accessToken: effectiveAccessToken,
     });
   } catch (err) {
     return NextResponse.json(

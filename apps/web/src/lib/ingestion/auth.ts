@@ -18,8 +18,33 @@ export type ResolveIngestAuthResult =
   | { auth?: never; error: NextResponse };
 
 /**
- * Authenticates ingestion requests via either an active `x-api-key` scoped to a
- * patient profile or a verified user session with `vitals_read` scope.
+ * Extracts a SENTINEL device ingestion API key from:
+ * 1. `x-api-key` header
+ * 2. `Authorization: Bearer snt_...` header
+ * 3. `?apiKey=...` or `?token=...` query parameters (for companion apps that only take a single URL)
+ */
+export function extractApiKeyFromRequest(request: NextRequest): string | null {
+  const headerKey = request.headers.get('x-api-key')?.trim();
+  if (headerKey) return headerKey;
+
+  const authHeader = request.headers.get('authorization')?.trim();
+  if (authHeader?.toLowerCase().startsWith('bearer ')) {
+    const bearer = authHeader.slice(7).trim();
+    if (bearer.startsWith('snt_')) return bearer;
+  }
+
+  const queryKey =
+    request.nextUrl.searchParams.get('apiKey')?.trim() ||
+    request.nextUrl.searchParams.get('token')?.trim();
+  if (queryKey) return queryKey;
+
+  return null;
+}
+
+/**
+ * Authenticates ingestion requests via either an active device API key
+ * (`x-api-key`, `Bearer snt_...`, or `?apiKey=...`) or a verified user session
+ * with `vitals_read` scope.
  * When `requestedPatientId` is omitted, defaults to the API key's bound patient
  * or the user's primary accessible patient profile.
  */
@@ -27,7 +52,7 @@ export async function resolveIngestAuth(
   request: NextRequest,
   requestedPatientId?: string,
 ): Promise<ResolveIngestAuthResult> {
-  const headerKey = request.headers.get('x-api-key');
+  const headerKey = extractApiKeyFromRequest(request);
 
   if (headerKey) {
     const hashed = hashApiKey(headerKey.trim());

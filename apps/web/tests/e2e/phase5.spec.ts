@@ -85,7 +85,7 @@ test.describe('Phase 5 Multi-Role Dashboards Closed Loop E2E', () => {
     expect(axe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'caregiver-desktop.png'), fullPage: true });
 
-    // 6. Register Clinician (auto-linked) -> verify Cohort table + ECharts + Partial NEWS2
+    // 6. Register Clinician (auto-linked) -> verify distinct Clinician interface + Cohort table + ECharts + Partial NEWS2
     await signUpViaUi(page, {
       name: 'Dr. Anand Kulkarni',
       email: creds.clinicianEmail,
@@ -94,6 +94,8 @@ test.describe('Phase 5 Multi-Role Dashboards Closed Loop E2E', () => {
       expectedUrlPart: '/clinician',
     });
 
+    await expect(page.getByTestId('role-workspace-badge')).toContainText('Clinician Workstation');
+    await expect(page.getByRole('link', { name: 'Today & Voice Chat' })).toHaveCount(0);
     await expect(page.getByText(/Consented Patient Cohort/i)).toBeVisible();
     await expect(page.getByText(/Asha Menon/i).first()).toBeVisible();
     await page.getByRole('button', { name: /Asha Menon/i }).first().click();

@@ -29,8 +29,13 @@ vi.mock('@/lib/session', async (importOriginal) => {
   };
 });
 
-import { POST as watchWebhookPost } from '@/app/api/v1/ingest/watch/route';
+import { GET as watchWebhookGet, POST as watchWebhookPost } from '@/app/api/v1/ingest/watch/route';
 import { POST as providerSyncPost } from '@/app/api/v1/sync/provider/route';
+import {
+  DELETE as connectorDelete,
+  GET as connectorStatusGet,
+} from '@/app/api/v1/connectors/google/status/route';
+import { saveEncryptedGoogleConnectorTokens } from '@/lib/ingestion/connectors/google-cloud-health';
 
 let pgHandle: LocalPgHandle;
 const originalFetch = globalThis.fetch;
@@ -48,6 +53,8 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   delete process.env.OPEN_WEARABLES_URL;
   delete process.env.OPEN_WEARABLES_API_KEY;
+  delete process.env.GOOGLE_CLIENT_ID;
+  delete process.env.GOOGLE_CLIENT_SECRET;
 });
 
 afterAll(async () => {
@@ -247,5 +254,171 @@ describe('Universal Smartwatch Sync (BLE GATT, Webhook Normalizer, Cloud Bridges
     expect(okBody.provider).toBe('open_wearables');
     expect(okBody.recordsAccepted).toBe(2);
     expect(okBody.isSynthetic).toBe(false);
+  });
+
+  it('normalizes Android Health Connect (HC Webhook) payloads and supports query-param auth on /api/v1/ingest/watch', async () => {
+    const hcPayload = {
+      heart_rate: [
+        {
+          metadata: { id: 'hc-hr-1', dataOrigin: 'com.sec.android.app.shealth' },
+          startTime: '2026-11-27T07:00:00Z',
+          samples: [{ time: '2026-11-27T07:00:10Z', beatsPerMinute: 71 }],
+        },
+      ],
+      heart_rate_variability_rmssd: [
+        { time: '2026-11-27T07:01:00Z', heartRateVariabilityMillis: 44.2 },
+      ],
+      oxygen_saturation: [{ time: '2026-11-27T07:02:00Z', percentage: 98 }],
+      steps: [{ startTime: '2026-11-27T06:00:00Z', endTime: '2026-11-27T07:00:00Z', count: 840 }],
+      sleep_sessions: [
+        {
+          startTime: '2026-11-26T22:30:00Z',
+          endTime: '2026-11-27T05:30:00Z',
+          stages: [
+            { stage: 'deep', startTime: '2026-11-26T23:00:00Z', endTime: '2026-11-27T01:00:00Z' },
+            { stage: 'awake', startTime: '2026-11-27T01:00:00Z', endTime: '2026-11-27T01:15:00Z' },
+            { stage: 'rem', startTime: '2026-11-27T01:15:00Z', endTime: '2026-11-27T05:15:00Z' },
+          ],
+        },
+      ],
+    };
+
+    const normalized = normalizeWatchPayload(hcPayload);
+    expect(normalized.source).toBe('health_connect');
+    expect(normalized.samples.map((s) => s.metricType)).toEqual([
+      'heart_rate',
+      'hrv_rmssd',
+      'spo2',
+      'steps',
+      'sleep_duration_min',
+    ]);
+    expect(normalized.samples[4]?.value).toBe(360);
+    expect(normalized.samples.every((s) => s.isSynthetic === false)).toBe(true);
+
+    const pingReq = new NextRequest(
+      `http://localhost:3000/api/v1/ingest/watch?apiKey=${encodeURIComponent(SEED_IDS.demoIngestApiKey)}`,
+      { method: 'GET' },
+    );
+    const pingRes = await watchWebhookGet(pingReq);
+    expect(pingRes.status).toBe(200);
+    const pingBody = (await pingRes.json()) as { ok: boolean; patientId: string };
+    expect(pingBody.ok).toBe(true);
+    expect(pingBody.patientId).toBe(SEED_IDS.patientProfileId);
+
+    const postReq = new NextRequest(
+      `http://localhost:3000/api/v1/ingest/watch?apiKey=${encodeURIComponent(SEED_IDS.demoIngestApiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...hcPayload,
+          idempotencyKey: `hc-webhook-${randomUUID()}`,
+        }),
+      },
+    );
+    const postRes = await watchWebhookPost(postReq);
+    expect(postRes.status).toBe(201);
+    const postJson = (await postRes.json()) as { recordsAccepted: number; isSynthetic: boolean };
+    expect(postJson.recordsAccepted).toBe(5);
+    expect(postJson.isSynthetic).toBe(false);
+  });
+
+  it('stores encrypted Google Fit tokens and syncs Google Fit dataset aggregates on POST /api/v1/sync/provider', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+    mockSession = {
+      userId: SEED_IDS.patientUserId,
+      email: 'ramesh@example.org',
+      name: 'Ramesh Pai',
+      role: 'patient',
+      locale: 'en',
+    };
+
+    const notConnReq = new NextRequest('http://localhost:3000/api/v1/sync/provider', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'google_fit', evaluate: false }),
+    });
+    const notConnRes = await providerSyncPost(notConnReq);
+    expect(notConnRes.status).toBe(400);
+    const notConnBody = (await notConnRes.json()) as { status: string; connectUrl: string };
+    expect(notConnBody.status).toBe('not_connected');
+    expect(notConnBody.connectUrl).toContain('/api/v1/connectors/google/connect');
+
+    await saveEncryptedGoogleConnectorTokens({
+      userId: SEED_IDS.patientUserId,
+      mode: 'google_fit',
+      accessToken: 'gf-access-token-test',
+      refreshToken: 'gf-refresh-token-test',
+      expiresInSeconds: 3600,
+      scope: 'https://www.googleapis.com/auth/fitness.heart_rate.read',
+    });
+
+    const statusRes = await connectorStatusGet(
+      new NextRequest('http://localhost:3000/api/v1/connectors/google/status'),
+    );
+    expect(statusRes.status).toBe(200);
+    const statusJson = (await statusRes.json()) as {
+      connections: { google_fit: { connected: boolean; hasRefreshToken: boolean } };
+    };
+    expect(statusJson.connections.google_fit.connected).toBe(true);
+    expect(statusJson.connections.google_fit.hasRefreshToken).toBe(true);
+
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const parsedBody = JSON.parse(String(init?.body ?? '{}')) as {
+        aggregateBy?: Array<{ dataTypeName?: string }>;
+      };
+      const dt = parsedBody.aggregateBy?.[0]?.dataTypeName;
+      if (dt === 'com.google.heart_rate.bpm') {
+        return new Response(
+          JSON.stringify({
+            bucket: [
+              {
+                startTimeMillis: '1795700000000',
+                dataset: [
+                  {
+                    dataSourceId: 'derived:com.google.heart_rate.bpm:merge',
+                    point: [
+                      {
+                        startTimeNanos: '1795700000000000000',
+                        value: [{ fpVal: 68.5 }],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(JSON.stringify({ bucket: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const syncReq = new NextRequest('http://localhost:3000/api/v1/sync/provider', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'google_fit', hoursBack: 24, evaluate: false }),
+    });
+    const syncRes = await providerSyncPost(syncReq);
+    expect(syncRes.status).toBe(201);
+    const syncBody = (await syncRes.json()) as {
+      provider: string;
+      recordsAccepted: number;
+      isSynthetic: boolean;
+    };
+    expect(syncBody.provider).toBe('google_fit');
+    expect(syncBody.recordsAccepted).toBe(1);
+    expect(syncBody.isSynthetic).toBe(false);
+
+    const delRes = await connectorDelete(
+      new NextRequest('http://localhost:3000/api/v1/connectors/google/status?mode=google_fit', {
+        method: 'DELETE',
+      }),
+    );
+    expect(delRes.status).toBe(200);
   });
 });

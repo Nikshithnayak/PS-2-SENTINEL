@@ -64,11 +64,11 @@ test.describe('Phase 6 Signature Visuals, Reduced Motion, i18n & PWA Verificatio
     });
 
     await page.getByRole('button', { name: 'ಕನ್ನಡ' }).click();
-    await expect(page.getByText(/ನಮಸ್ಕಾರ/)).toBeVisible();
+    await expect(page.getByText(/ನಮಸ್ಕಾರ/).first()).toBeVisible();
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'today-kannada-desktop.png'), fullPage: true });
 
     await page.getByRole('button', { name: 'हिन्दी' }).click();
-    await expect(page.getByText(/नमस्ते/)).toBeVisible();
+    await expect(page.getByText(/नमस्ते/).first()).toBeVisible();
 
     const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag22aa']).analyze();
     expect(axe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);

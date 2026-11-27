@@ -3,86 +3,10 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { Role } from '@sentinel/shared';
-import {
-  Activity,
-  BellRing,
-  BookOpen,
-  Database,
-  FileText,
-  HeartHandshake,
-  LineChart,
-  LogIn,
-  Palette,
-  Settings,
-  ShieldCheck,
-  Stethoscope,
-  Users,
-} from 'lucide-react';
+import { Activity, BellRing, BookOpen, LogIn, Palette } from 'lucide-react';
 import { SyntheticBadge } from '@/components/health/status-badge';
 import { authClient } from '@/lib/auth-client';
-
-interface NavLinkItem {
-  href: string;
-  label: string;
-  icon: typeof Activity;
-}
-
-interface NavGroup {
-  id: 'patient' | 'caregiver' | 'clinician' | 'admin';
-  title: string;
-  roles: Role[] | 'all';
-  items: NavLinkItem[];
-}
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    id: 'patient',
-    title: 'Patient',
-    roles: 'all',
-    items: [
-      { href: '/today', label: 'Today', icon: HeartHandshake },
-      { href: '/signals', label: 'Health Trends', icon: LineChart },
-      { href: '/alerts', label: 'Alerts', icon: BellRing },
-    ],
-  },
-  {
-    id: 'caregiver',
-    title: 'Caregiver',
-    roles: ['caregiver', 'clinician', 'org_admin'],
-    items: [
-      { href: '/caregiver', label: 'Overview', icon: ShieldCheck },
-      { href: '/settings/consent', label: 'Care Circle', icon: Users },
-      { href: '/alerts', label: 'Notifications', icon: BellRing },
-    ],
-  },
-  {
-    id: 'clinician',
-    title: 'Clinician',
-    roles: ['clinician', 'org_admin', 'caregiver'],
-    items: [
-      { href: '/clinician', label: 'Patient Overview', icon: Stethoscope },
-      { href: '/clinician/report', label: 'Clinical Reports', icon: FileText },
-    ],
-  },
-  {
-    id: 'admin',
-    title: 'Administration',
-    roles: 'all',
-    items: [
-      { href: '/ingest', label: 'Data Import', icon: Database },
-      { href: '/settings/consent', label: 'Consent & Audit', icon: ShieldCheck },
-      { href: '/settings', label: 'Settings', icon: Settings },
-    ],
-  },
-];
-
-const MOBILE_TABS: NavLinkItem[] = [
-  { href: '/today', label: 'Today', icon: HeartHandshake },
-  { href: '/signals', label: 'Trends', icon: LineChart },
-  { href: '/ingest', label: 'Watch', icon: Database },
-  { href: '/alerts', label: 'Alerts', icon: BellRing },
-  { href: '/settings', label: 'Settings', icon: Settings },
-];
+import { getRoleWorkspaceConfig } from '@/lib/roles';
 
 export function SentinelShell({
   title,
@@ -100,14 +24,7 @@ export function SentinelShell({
   const pathname = usePathname();
   const { data: session } = authClient.useSession();
   const userRole = ((session?.user as { role?: Role } | undefined)?.role ?? 'patient') as Role;
-
-  const visibleGroups = NAV_GROUPS.filter((g) => {
-    if (!session?.user) {
-      return g.id === 'patient' || g.id === 'admin';
-    }
-    if (g.roles === 'all') return true;
-    return g.roles.includes(userRole);
-  });
+  const workspace = getRoleWorkspaceConfig(userRole);
 
   function isActivePath(href: string) {
     if (href === '/clinician' && pathname.startsWith('/clinician/report')) return false;
@@ -117,14 +34,14 @@ export function SentinelShell({
 
   return (
     <div className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] text-[var(--text-primary)] pb-24 lg:pb-0 print:pb-0">
-      {/* Desktop Left Mint Rail Navigation */}
+      {/* Role-Specific Left Rail Navigation */}
       <aside
         aria-label="Primary sidebar navigation"
         className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col justify-between border-r border-[var(--border-subtle)] bg-[var(--bg-rail)] lg:flex print:hidden"
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
           <Link
-            href="/"
+            href={session?.user ? workspace.homeHref : '/'}
             className="flex shrink-0 items-center gap-3 rounded-2xl px-2 py-1.5 transition hover:bg-[var(--bg-elevated)]"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]">
@@ -135,13 +52,21 @@ export function SentinelShell({
                 Sachet · SENTINEL
               </p>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                Early Care Monitor
+                {workspace.portalSubtitle}
               </p>
             </div>
           </Link>
 
-          <nav aria-label="Role workspaces" className="mt-4 space-y-3.5">
-            {visibleGroups.map((group) => (
+          <div className="mt-3 px-1">
+            <span
+              className={`inline-flex w-full items-center justify-center rounded-xl border px-2.5 py-1.5 text-xs font-bold ${workspace.badgeClassName}`}
+            >
+              {workspace.badgeLabel}
+            </span>
+          </div>
+
+          <nav aria-label="Role workspaces" className="mt-4 space-y-4">
+            {workspace.sidebarGroups.map((group) => (
               <div key={group.id}>
                 <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
                   {group.title}
@@ -155,10 +80,11 @@ export function SentinelShell({
                         <Link
                           href={item.href}
                           aria-current={active ? 'page' : undefined}
-                          className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${active
-                            ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)] shadow-xs'
-                            : 'text-[var(--text-primary)] hover:bg-[var(--bg-mint-panel)]'
-                            }`}
+                          className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${
+                            active
+                              ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)] shadow-xs'
+                              : 'text-[var(--text-primary)] hover:bg-[var(--bg-mint-panel)]'
+                          }`}
                         >
                           <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                           <span className="truncate">{item.label}</span>
@@ -172,13 +98,13 @@ export function SentinelShell({
           </nav>
         </div>
 
-        <div className="shrink-0 border-t border-[var(--border-subtle)] px-4 py-3 space-y-1">
+        <div className="shrink-0 space-y-1 border-t border-[var(--border-subtle)] px-4 py-3">
           <Link
             href="/model-card"
             className="flex min-h-10 items-center gap-2.5 rounded-xl px-3 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-mint-panel)] hover:text-[var(--text-primary)]"
           >
             <BookOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>Model Card & Safety</span>
+            <span>Model Card &amp; Safety</span>
           </Link>
           <Link
             href="/design"
@@ -196,7 +122,7 @@ export function SentinelShell({
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
             <div className="flex min-w-0 flex-wrap items-center gap-2.5">
               <Link
-                href="/"
+                href={session?.user ? workspace.homeHref : '/'}
                 aria-label="Sachet SENTINEL Home"
                 className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-3 text-sm font-semibold text-[var(--brand-primary-fg)] lg:hidden"
               >
@@ -208,6 +134,14 @@ export function SentinelShell({
                   <h1 className="font-[family-name:var(--font-display)] text-lg font-bold leading-tight sm:text-xl">
                     {title}
                   </h1>
+                  {session?.user && (
+                    <span
+                      data-testid="role-workspace-badge"
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${workspace.badgeClassName}`}
+                    >
+                      {workspace.badgeLabel}
+                    </span>
+                  )}
                   {isSynthetic && <SyntheticBadge />}
                 </div>
                 {subtitle && (
@@ -253,57 +187,43 @@ export function SentinelShell({
             aria-label="Mobile workspace links"
             className="mx-auto flex max-w-7xl gap-2 overflow-x-auto border-t border-[var(--border-subtle)] px-4 py-2 lg:hidden"
           >
-            <Link
-              href="/settings/consent"
-              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--text-primary)]"
-            >
-              <Users className="h-3.5 w-3.5 text-[var(--brand-primary)]" aria-hidden="true" />
-              <span>Care Circle &amp; Consent</span>
-            </Link>
-            <Link
-              href="/caregiver"
-              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--text-primary)]"
-            >
-              <ShieldCheck className="h-3.5 w-3.5 text-[var(--brand-primary)]" aria-hidden="true" />
-              <span>Caregiver</span>
-            </Link>
-            <Link
-              href="/clinician"
-              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--text-primary)]"
-            >
-              <Stethoscope className="h-3.5 w-3.5 text-[var(--brand-primary)]" aria-hidden="true" />
-              <span>Clinician</span>
-            </Link>
-            <Link
-              href="/clinician/report"
-              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--text-primary)]"
-            >
-              <FileText className="h-3.5 w-3.5 text-[var(--brand-primary)]" aria-hidden="true" />
-              <span>Reports</span>
-            </Link>
+            {workspace.mobileQuickLinks.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--text-primary)]"
+                >
+                  <Icon className="h-3.5 w-3.5 text-[var(--brand-primary)]" aria-hidden="true" />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </nav>
         </header>
 
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
       </div>
 
-      {/* Mobile Bottom Tab Bar */}
+      {/* Role-Specific Mobile Bottom Tab Bar */}
       <nav
         aria-label="Mobile quick navigation"
         className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]/95 px-1 py-1.5 backdrop-blur-md lg:hidden print:hidden"
       >
-        {MOBILE_TABS.map((tab) => {
+        {workspace.mobileTabs.map((tab) => {
           const Icon = tab.icon;
           const active = isActivePath(tab.href);
           return (
             <Link
-              key={tab.href}
+              key={`${tab.href}-${tab.label}`}
               href={tab.href}
               aria-current={active ? 'page' : undefined}
-              className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-semibold ${active
-                ? 'bg-[var(--bg-mint-panel)] text-[var(--brand-accent-text)]'
-                : 'text-[var(--text-muted)]'
-                }`}
+              className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-semibold ${
+                active
+                  ? 'bg-[var(--bg-mint-panel)] text-[var(--brand-accent-text)]'
+                  : 'text-[var(--text-muted)]'
+              }`}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="truncate">{tab.label}</span>

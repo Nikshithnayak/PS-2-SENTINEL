@@ -9,6 +9,31 @@ import { normalizeWatchPayload } from '@/lib/ingestion/watch-normalizer';
 const UuidSchema = z.string().uuid();
 
 /**
+ * Allows companion apps (HC Webhook, Health Auto Export, Tasker) to verify
+ * webhook connectivity and API key auth cleanly before syncing batches.
+ */
+export async function GET(request: NextRequest) {
+  const rawPatient = request.nextUrl.searchParams.get('patientId') ?? undefined;
+  if (rawPatient !== undefined && !UuidSchema.safeParse(rawPatient).success) {
+    return NextResponse.json({ error: 'Invalid patientId UUID' }, { status: 400 });
+  }
+  const authRes = await resolveIngestAuth(request, rawPatient);
+  if (authRes.error) return authRes.error;
+
+  return NextResponse.json({
+    ok: true,
+    endpoint: '/api/v1/ingest/watch',
+    patientId: authRes.auth.patientId,
+    supportedPayloads: [
+      'health_connect_webhook',
+      'apple_health_auto_export',
+      'flat_watch_json',
+      'canonical_samples',
+    ],
+  });
+}
+
+/**
  * Universal smartwatch webhook endpoint accepting companion-app JSON snapshots
  * (Apple Shortcuts, Health Auto Export, Android Health Connect / Tasker / Gadgetbridge)
  * and normalizing them into verified non-synthetic `VitalSampleInput` batches.

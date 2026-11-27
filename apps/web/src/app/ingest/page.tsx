@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, type ChangeEvent, type FormEvent } from 'react';
-import Link from 'next/link';
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -14,7 +13,10 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
-import { WatchSyncHub } from '@/components/ingest/watch-sync-hub';
+import {
+  WatchSyncHub,
+  type GoogleConnectorsSummary,
+} from '@/components/ingest/watch-sync-hub';
 import { SentinelShell } from '@/components/sentinel-shell';
 
 interface QualityStatusResponse {
@@ -32,6 +34,7 @@ interface QualityStatusResponse {
     status: string;
     message: string;
   }>;
+  googleConnectors?: GoogleConnectorsSummary;
   counts: {
     totalSamples: number;
     syntheticSamples: number;
@@ -114,6 +117,32 @@ export default function IngestPage() {
   const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
 
   const [enginePreview, setEnginePreview] = useState<EnginePreviewResult | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const err = sp.get('connector_error');
+    const warn = sp.get('connector_warning');
+    const conn = sp.get('connector');
+    const synced = sp.get('synced');
+    if (err) {
+      setErrorMsg(err);
+    } else if (warn) {
+      setErrorMsg(
+        `Google account authorized (${conn ?? 'google_fit'}), but Google API reported: ${warn}`,
+      );
+    } else if (conn) {
+      const label = conn === 'google_health_api' ? 'Google Health API v4' : 'Google Fit';
+      setStatusMsg(
+        synced !== null
+          ? `${label} connected directly — synced ${synced} real vital sample(s) cleanly.`
+          : `${label} connected directly.`,
+      );
+    }
+    if (err || warn || conn) {
+      window.history.replaceState({}, '', '/ingest');
+    }
+  }, []);
 
   const engineEvalMutation = useMutation({
     mutationFn: async () => {
@@ -382,11 +411,18 @@ export default function IngestPage() {
             <WatchSyncHub
               patientId={qualityQuery.data?.patientId}
               adapters={qualityQuery.data?.adapters ?? []}
+              googleConnectors={qualityQuery.data?.googleConnectors}
               onSyncComplete={() => {
                 void qc.invalidateQueries({ queryKey: ['quality-status'] });
                 void qc.invalidateQueries({ queryKey: ['patient-dashboard'] });
               }}
             />
+
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Optional Historical Backfill (Manual File Export / CSV)
+              </h2>
+            </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
               {/* Apple Health XML Importer */}

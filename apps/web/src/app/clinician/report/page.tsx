@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Printer } from 'lucide-react';
+import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { SentinelShell } from '@/components/sentinel-shell';
 
@@ -62,6 +63,10 @@ export default function ClinicianReportPage() {
       isSynthetic={query.data?.isSynthetic}
     >
       <main className="mx-auto max-w-4xl space-y-6">
+        <RoleWorkspaceGuard
+          allowedRoles={['clinician', 'org_admin']}
+          workspaceName="Printable Clinical Summary"
+        >
         {isUnauth ? (
           <SignedOutGate heading="Sign in to view Clinician Summary" />
         ) : (
@@ -172,6 +177,7 @@ export default function ClinicianReportPage() {
             </article>
           </>
         )}
+        </RoleWorkspaceGuard>
       </main>
     </SentinelShell>
   );

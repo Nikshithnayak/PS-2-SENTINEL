@@ -34,10 +34,44 @@ test.describe('Phase 2 Data Ingestion & Smartwatch Sync E2E', () => {
     await expect(page.getByText('Wearable Data Ingestion & Quality Pipeline')).toBeVisible();
     await expect(page.getByText('Synthetic Physiological Scenario Mode')).toHaveCount(0);
 
-    // Verify Universal Watch Sync Hub & generate device API key
+    // Verify Direct Connect Hub (Google Fit OAuth + Health Connect QR Link + Webhook)
     await expect(
-      page.getByText('Connect Any Smartwatch Directly or via Companion Webhook'),
+      page.getByText('Connect Google Fit, Health Connect & Any Smartwatch Directly'),
     ).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Connect Google Fit' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Generate Direct Phone Sync Link & QR' }).click();
+    await expect(page.getByText(/Direct Phone Sync URL Ready/i)).toBeVisible();
+    const directSyncLinkEl = page
+      .locator('code')
+      .filter({ hasText: '/api/v1/ingest/watch?apiKey=snt_live_' })
+      .first();
+    await expect(directSyncLinkEl).toBeVisible();
+    const directSyncUrl = (await directSyncLinkEl.innerText()).trim();
+    await expect(
+      page.getByAltText(/QR code for direct Android Health Connect/i),
+    ).toBeVisible();
+
+    // Verify Health Connect HC Webhook payload directly via generated query-param URL
+    const hcPingRes = await page.request.get(directSyncUrl);
+    expect(hcPingRes.status()).toBe(200);
+    const hcPostRes = await page.request.post(directSyncUrl.replace('&evaluate=true', ''), {
+      data: {
+        heart_rate: [
+          {
+            metadata: { id: `e2e-hc-${suffix}` },
+            startTime: '2026-11-27T07:00:00Z',
+            samples: [{ time: '2026-11-27T07:00:05Z', beatsPerMinute: 72 }],
+          },
+        ],
+        steps: [{ startTime: '2026-11-27T06:00:00Z', endTime: '2026-11-27T07:00:00Z', count: 950 }],
+      },
+    });
+    expect(hcPostRes.status()).toBe(201);
+    const hcJson = (await hcPostRes.json()) as { recordsAccepted: number; isSynthetic: boolean };
+    expect(hcJson.recordsAccepted).toBe(2);
+    expect(hcJson.isSynthetic).toBe(false);
+
     await page.getByRole('button', { name: 'Apple Watch (iOS)' }).click();
     await expect(page.getByText(/Health Auto Export/i).first()).toBeVisible();
     await page.getByRole('button', { name: 'Watch JSON / curl' }).click();
@@ -69,10 +103,10 @@ test.describe('Phase 2 Data Ingestion & Smartwatch Sync E2E', () => {
     expect(watchWebhookJson.recordsAccepted).toBe(3);
     expect(watchWebhookJson.isSynthetic).toBe(false);
 
-    // Clicking unconfigured cloud adapter explains setup clearly with zero console errors
+    // Clicking unconfigured Open Wearables bridge explains setup cleanly with zero console errors
     await page.getByRole('button', { name: 'Sync Open Wearables' }).click();
     await expect(
-      page.getByText(/Push live watch readings with Bluetooth or the Webhook tab/i),
+      page.getByText(/Push live watch readings with Bluetooth or the Phone Health Connect link/i),
     ).toBeVisible();
 
     // Upload real Apple Health XML fixture
