@@ -3,13 +3,17 @@ import {
   Activity,
   ArrowRight,
   BellRing,
+  CheckCircle2,
   Database,
   HeartPulse,
+  Languages,
   LineChart,
   Lock,
+  Palette,
   ShieldCheck,
   Stethoscope,
   Users,
+  Watch,
 } from 'lucide-react';
 import { CalmFade } from '@/components/motion/primitives';
 import { PulseHeroVisual } from '@/components/visuals/pulse-hero';
@@ -20,22 +24,28 @@ export const dynamic = 'force-dynamic';
 
 const PILLARS = [
   {
-    step: '01',
-    title: 'Learn a personal baseline',
-    body: 'SENTINEL builds a normal range from rest, sleep, heart rate, and activity over 14 days.',
+    step: '01 · Personal Baseline',
+    title: 'Learns your own normal',
+    body: 'Weighted median + MAD dispersion across circadian rest, sleep, and activity blocks calibrates each elder over 14 days instead of relying on generic population cutoffs.',
     icon: LineChart,
   },
   {
-    step: '02',
-    title: 'Notice meaningful changes',
-    body: 'A change is assessed across several signals rather than from a single isolated reading.',
+    step: '02 · Anomaly Detection',
+    title: 'Three deterministic layers',
+    body: 'Combines L1 safety bounds, L2 directional EWMA/CUSUM & Pelt change-points, and L3 multivariate coherence plus transparent Partial NEWS2 wearable scoring.',
     icon: Activity,
   },
   {
-    step: '03',
-    title: 'Inform the right people',
-    body: 'The patient, caregiver, or clinician receives clear next steps with calm escalation.',
+    step: '03 · Early Care Alerts',
+    title: 'Anti-fatigue escalation',
+    body: 'N-of-M persistence, quiet hours, cooldown deduplication, real-time Caregiver SSE, inbound OK / CALL ME / SNOOZE email replies, and India 112 / 108 routing.',
     icon: BellRing,
+  },
+  {
+    step: '04 · Elder Accessibility',
+    title: 'Calm multilingual care',
+    body: 'Large 18px+ typography, 48px+ touch controls, Web Speech read-aloud, voice check-in, and medication checks across English, Kannada, and Hindi.',
+    icon: Languages,
   },
 ] as const;
 
@@ -43,19 +53,22 @@ const WORKSPACES = [
   {
     role: 'Patient · Elder Mode',
     route: '/today',
-    summary: 'A daily status, important readings, medication checks, and direct help.',
+    summary:
+      'Daily status in plain words ("changes from your personal normal"), resting HR, SpO2, sleep, steps, one-tap check-in, and immediate caregiver call.',
     icon: HeartPulse,
   },
   {
     role: 'Caregiver Console',
     route: '/caregiver',
-    summary: 'One place to review linked elders, acknowledge alerts, and respond.',
+    summary:
+      'Linked elder profiles, live SSE deterioration updates, step-by-step alert acknowledgement, snooze, escalation, and ambient heat context.',
     icon: Users,
   },
   {
     role: 'Clinician & Audit',
     route: '/clinician',
-    summary: 'Consented cohort review, trends, assessment details, and report export.',
+    summary:
+      'Consented cohort triage, zoomed baseline-corridor trajectories, L1/L2/L3 attribution, Partial NEWS2 breakdown, PDF print, and FHIR R4 export.',
     icon: Stethoscope,
   },
 ] as const;
@@ -76,8 +89,8 @@ export default async function HomePage() {
   return (
     <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* Top Healthcare Utility Header matching glacial aqua-mint palette */}
-      <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/95 pt-[env(safe-area-inset-top)] backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] pt-[env(safe-area-inset-top)]">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]">
               <Activity className="h-5 w-5" aria-hidden="true" />
@@ -92,27 +105,51 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <nav
-            aria-label="Primary navigation"
-            className="flex min-w-0 max-w-[70%] items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-none sm:flex-wrap sm:overflow-visible"
-          >
+          <nav aria-label="Primary navigation" className="flex flex-wrap items-center gap-2">
             <Link
               href="/today"
-              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
             >
               <HeartPulse className="h-4 w-4 text-[var(--brand-secondary)]" aria-hidden="true" />
               <span>Today</span>
             </Link>
             <Link
+              href="/caregiver"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
+            >
+              <span>Caregiver</span>
+            </Link>
+            <Link
+              href="/clinician"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
+            >
+              <Stethoscope className="h-4 w-4 text-[var(--brand-secondary)]" aria-hidden="true" />
+              <span>Clinician</span>
+            </Link>
+            <Link
               href="/alerts"
-              className="hidden min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)] sm:inline-flex"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
             >
               <BellRing className="h-4 w-4 text-[var(--brand-secondary)]" aria-hidden="true" />
               <span>Alerts</span>
             </Link>
             <Link
+              href="/ingest"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
+            >
+              <Database className="h-4 w-4 text-[var(--brand-secondary)]" aria-hidden="true" />
+              <span>Import</span>
+            </Link>
+            <Link
+              href="/design"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
+            >
+              <Palette className="h-4 w-4 text-[var(--brand-secondary)]" aria-hidden="true" />
+              <span>Design</span>
+            </Link>
+            <Link
               href="/auth"
-              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
             >
               <span>{session ? session.name : 'Sign In'}</span>
             </Link>
@@ -121,60 +158,124 @@ export default async function HomePage() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-10 px-4 py-8 sm:px-6 sm:py-10">
-        {/* Concise home overview */}
+        {/* Hero Section Framed in Exact Sent-Image Aqua-Mint Bento Container */}
         <CalmFade>
-          <section className="grid items-center gap-8 border-y border-[var(--border-subtle)] py-8 sm:py-10 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.95fr)]">
-            <div className="max-w-2xl">
-              <p className="text-sm font-bold uppercase tracking-[0.16em] text-[var(--brand-accent-text)]">
-                Wearable early awareness
-              </p>
-              <h1 className="mt-4 max-w-xl font-[family-name:var(--font-display)] text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl">
-                Notice when daily health starts to change.
-              </h1>
-              <p className="mt-5 max-w-xl text-lg leading-relaxed text-[var(--text-muted)]">
-                SENTINEL compares heart rate, sleep, activity, and other readings with an individual&apos;s own baseline, then shows only changes that may need attention.
-              </p>
-              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-                <Link
-                  href="/today"
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--brand-primary)] px-5 text-base font-semibold text-[var(--brand-primary-fg)]"
-                >
-                  Open today&apos;s view
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </Link>
-                <Link
-                  href="/model-card"
-                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-5 text-base font-semibold"
-                >
-                  How it works
-                </Link>
-              </div>
-              <p className="mt-4 text-sm text-[var(--text-muted)]">
-                Screening and early awareness only. Not a diagnostic medical device.
-              </p>
-            </div>
+          <section className="mint-bento p-5 sm:p-7">
+            <div className="grid items-stretch gap-6 lg:grid-cols-12">
+              {/* Left Narrative Card */}
+              <div className="clinical-card flex flex-col justify-between p-6 sm:p-9 lg:col-span-6">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-[var(--status-stable-bg)] px-3.5 py-1 text-xs font-bold text-[var(--status-stable)]">
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Screening &amp; Early Awareness · Non-Diagnostic</span>
+                  </div>
 
-            <PulseHeroVisual />
+                  <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">
+                    Personal physiological baselines that notice changes before crisis.
+                  </h1>
+                  <p className="mt-4 text-base text-[var(--text-muted)]">
+                    Built for elderly home care and chronic physiological monitoring. SENTINEL learns
+                    each individual&apos;s own normal, enforces strict pre-login PHI isolation with
+                    PostgreSQL Row-Level Security, and guides caregivers calmly across English,
+                    Kannada, and Hindi.
+                  </p>
+                </div>
+
+                <div className="mt-7 space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Link
+                      href="/auth"
+                      className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-6 text-base font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
+                    >
+                      <span>
+                        {session
+                          ? `Signed in as ${session.name} (${session.role})`
+                          : 'Sign In / Create Account'}
+                      </span>
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </Link>
+                    <Link
+                      href="/settings/consent"
+                      className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-5 text-base font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-mint-panel)]"
+                    >
+                      <ShieldCheck className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+                      <span>Open Consent &amp; Audit Ledger</span>
+                    </Link>
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Zero protected patient data is exposed prior to authentication. Create a new
+                    account on <code className="font-[family-name:var(--font-mono)]">/auth</code> or
+                    sign in with Google to pair your smartwatch.
+                  </p>
+                </div>
+              </div>
+
+              {/* Right Sync Architecture & Restrained Hero Visual */}
+              <div className="flex flex-col gap-4 lg:col-span-6">
+                <div className="flex items-center justify-between px-1">
+                  <span className="font-[family-name:var(--font-display)] text-base font-bold text-[var(--text-primary)]">
+                    Universal Smartwatch Ingestion &amp; Privacy
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--status-stable-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--status-stable)]">
+                    <Watch className="h-3 w-3" aria-hidden="true" />
+                    REAL TELEMETRY READY
+                  </span>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="clinical-card p-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-[var(--brand-accent-text)]">
+                      Direct &amp; Mobile Watch Sync
+                    </p>
+                    <p className="mt-1 font-[family-name:var(--font-display)] text-base font-bold">
+                      Any Watch · Zero Vendor Lock
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Web Bluetooth BLE 0x180D, Apple Watch Health Auto Export, Android Health
+                      Connect, XML &amp; CSV.
+                    </p>
+                  </div>
+
+                  <div className="clinical-card p-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-[var(--brand-accent-text)]">
+                      Privacy &amp; Clinical Trace
+                    </p>
+                    <p className="mt-1 font-[family-name:var(--font-display)] text-base font-bold">
+                      DPDP &amp; FHIR R4 Ready
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      AES-256-GCM field encryption, instant consent withdrawal, and SHA-256 audit
+                      verification.
+                    </p>
+                  </div>
+                </div>
+
+                <PulseHeroVisual />
+              </div>
+            </div>
           </section>
         </CalmFade>
 
-        {/* How it works */}
+        {/* Four Clinical Pillars */}
         <section aria-label="Core monitoring pillars" className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-[var(--brand-accent-text)]">
+                Four Required Pillars
+              </p>
               <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold">
-                How SENTINEL works
+                Built for calm clarity, not alert fatigue
               </h2>
             </div>
             <Link
               href="/model-card"
               className="text-sm font-semibold text-[var(--brand-accent-text)] hover:underline"
             >
-              Read the model card →
+              Read Model Card &amp; Limitations →
             </Link>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {PILLARS.map((item) => {
               const Icon = item.icon;
               return (
@@ -197,11 +298,11 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Role workspaces */}
-        <section aria-label="Role workspaces" className="border-y border-[var(--border-subtle)] py-8">
+        {/* Role Workspaces Bento */}
+        <section aria-label="Role workspaces" className="mint-bento p-5 sm:p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 px-1">
             <h2 className="font-[family-name:var(--font-display)] text-xl font-bold">
-              Choose your workspace
+              Role-Tailored Healthcare Workspaces
             </h2>
             <Link
               href="/auth"

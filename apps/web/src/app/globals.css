@@ -42,80 +42,39 @@
   --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 }
 
-html,
-body {
-  background-color: var(--bg-base);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  line-height: 1.55;
-  -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-  width: 100%;
-}
+@layer base {
+  html {
+    scroll-padding-top: 8rem;
+    -webkit-text-size-adjust: 100%;
+  }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+  html,
+  body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
 
-img,
-svg,
-video,
-canvas {
-  max-width: 100%;
-}
+  body {
+    overflow-x: clip;
+  }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
-button,
-a,
-input,
-textarea,
-select {
-  -webkit-tap-highlight-color: transparent;
-}
-
-table {
-  width: 100%;
-}
-
-html {
-  scroll-padding-top: 8rem;
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
-body {
-  min-width: 0;
-  margin: 0;
-  overscroll-behavior-y: none;
-}
-
-@media (pointer: coarse) {
   button,
-  [role="button"],
-  a {
-    touch-action: manipulation;
-  }
-}
-
-@media (max-width: 639px) {
-  .mint-bento,
-  .clinical-card {
-    border-radius: 14px;
+  a,
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
   }
 
-  h1,
-  h2,
-  h3,
-  p {
-    overflow-wrap: anywhere;
+  @media (pointer: coarse) {
+    button,
+    [role="button"],
+    a {
+      touch-action: manipulation;
+    }
   }
 }
 

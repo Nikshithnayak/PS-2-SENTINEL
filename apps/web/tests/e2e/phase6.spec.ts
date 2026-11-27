@@ -22,7 +22,7 @@ test.describe('Phase 6 Signature Visuals, Reduced Motion, i18n & PWA Verificatio
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    await expect(page.getByText(/Notice when daily health starts to change/i)).toBeVisible();
+    await expect(page.getByText(/Personal physiological baselines/i)).toBeVisible();
 
     const webglCanvases = await page.locator('canvas').count();
     expect(webglCanvases).toBeLessThanOrEqual(1);

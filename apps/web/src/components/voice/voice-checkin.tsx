@@ -127,7 +127,7 @@ async function decodeBlobToMono16k(blob: Blob): Promise<Float32Array> {
     const decoded = await audioCtx.decodeAudioData(arrayBuffer);
     return new Float32Array(decoded.getChannelData(0));
   } finally {
-    await audioCtx.close().catch(() => {});
+    await audioCtx.close().catch(() => { });
   }
 }
 
@@ -186,19 +186,6 @@ export function VoiceCheckinCompanion({
   }, [handsFreeMode]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('Worker' in window)) return;
-    const preloadTimer = window.setTimeout(() => {
-      try {
-        const worker = getOrCreateWhisperWorker();
-        worker.postMessage({ type: 'preload' });
-      } catch {
-        // Whisper remains available to retry on demand.
-      }
-    }, 600);
-    return () => window.clearTimeout(preloadTimer);
-  }, []);
-
-  useEffect(() => {
     let active = true;
     fetch('/api/v1/voice/transcribe')
       .then((r) => (r.ok ? r.json() : null))
@@ -207,7 +194,7 @@ export function VoiceCheckinCompanion({
         setServerWhisperAvailable(Boolean(data.serverWhisperAvailable));
         if (data.providerLabel) setWhisperProviderLabel(data.providerLabel);
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       active = false;
     };
@@ -251,7 +238,7 @@ export function VoiceCheckinCompanion({
       vadRafRef.current = null;
     }
     if (vadCtxRef.current) {
-      void vadCtxRef.current.close().catch(() => {});
+      void vadCtxRef.current.close().catch(() => { });
       vadCtxRef.current = null;
     }
     if (mediaStreamRef.current) {
@@ -491,7 +478,7 @@ export function VoiceCheckinCompanion({
         } else if (heardSpeech) {
           if (silenceStartedAt === null) {
             silenceStartedAt = Date.now();
-          } else if (Date.now() - silenceStartedAt > 1050) {
+          } else if (Date.now() - silenceStartedAt > 1650) {
             manualStopRef.current = false;
             if (recorder.state === 'recording') recorder.stop();
             return;
@@ -560,7 +547,7 @@ export function VoiceCheckinCompanion({
               // Ignore stop error
             }
           }
-        }, 900);
+        }, 1600);
       };
 
       recog.onresult = (ev) => {
@@ -643,7 +630,6 @@ export function VoiceCheckinCompanion({
         mediaRecorderRef.current.stop();
         return;
       }
-      manualStopRef.current = false; // Browser recognition should submit immediately on Finish & Send.
       try {
         recognitionRef.current?.stop();
       } catch {
@@ -802,11 +788,10 @@ export function VoiceCheckinCompanion({
             type="button"
             onClick={toggleMicListening}
             disabled={transcribingAudio}
-            className={`inline-flex min-h-12 items-center gap-2 rounded-xl border px-4 text-base font-semibold cursor-pointer disabled:opacity-60 ${
-              listening
-                ? 'border-[var(--status-urgent)] bg-[var(--status-urgent-bg)] text-[var(--status-urgent)]'
-                : 'border-[var(--border-subtle)] bg-[var(--bg-base)] hover:bg-[var(--bg-elevated)]'
-            }`}
+            className={`inline-flex min-h-12 items-center gap-2 rounded-xl border px-4 text-base font-semibold cursor-pointer disabled:opacity-60 ${listening
+              ? 'border-[var(--status-urgent)] bg-[var(--status-urgent-bg)] text-[var(--status-urgent)]'
+              : 'border-[var(--border-subtle)] bg-[var(--bg-base)] hover:bg-[var(--bg-elevated)]'
+              }`}
           >
             {transcribingAudio ? (
               <Loader2 className="h-5 w-5 animate-spin text-[var(--brand-primary)]" aria-hidden="true" />
