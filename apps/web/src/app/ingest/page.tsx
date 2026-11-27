@@ -5,18 +5,17 @@ import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
-  ArrowLeft,
   BrainCircuit,
   CloudSun,
   FileSpreadsheet,
   FileUp,
   FlaskConical,
   KeyRound,
-  Lock,
   Radio,
   ShieldAlert,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 interface QualityStatusResponse {
   patientId: string;
@@ -283,47 +282,17 @@ export default function IngestPage() {
   const hasSynthetic = (qualityQuery.data?.counts.syntheticSamples ?? 0) > 0;
 
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-            <Link
-              href="/"
-              className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              <span>Home</span>
-            </Link>
-            <h1 className="font-[family-name:var(--font-display)] text-lg font-semibold sm:text-xl">
-              Wearable Data Ingestion & Quality Pipeline
-            </h1>
-            {hasSynthetic && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--status-synthetic-bg)] px-3 py-1 text-xs font-bold text-[var(--status-synthetic)]">
-                <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
-                SYNTHETIC
-              </span>
-            )}
-          </div>
-          <ThemeToggle />
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+    <SentinelShell
+      title="Wearable Data Ingestion & Quality Pipeline"
+      subtitle="Apple Health XML, CSV/Takeout mappers, device API keys, data quality & Synthetic Sandbox"
+      isSynthetic={hasSynthetic}
+    >
+      <main className="space-y-6">
         {isUnauth ? (
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-            <Lock className="mx-auto h-8 w-8 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="mt-3 text-xl font-semibold">Sign in required to import wearable data</h2>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
-              Sign in as Ramesh Pai or a consented care-circle member to upload exports or run
-              simulations.
-            </p>
-            <Link
-              href="/auth"
-              className="mt-5 inline-flex min-h-12 items-center rounded-xl bg-[var(--brand-primary)] px-5 font-semibold text-[var(--brand-primary-fg)]"
-            >
-              Sign In
-            </Link>
-          </div>
+          <SignedOutGate
+            heading="Sign in required to import wearable data"
+            description="Sign in as Ramesh Pai or a consented care-circle member to upload exports or run simulations."
+          />
         ) : (
           <>
             {statusMsg && (
@@ -770,6 +739,6 @@ export default function IngestPage() {
           </>
         )}
       </main>
-    </div>
+    </SentinelShell>
   );
 }

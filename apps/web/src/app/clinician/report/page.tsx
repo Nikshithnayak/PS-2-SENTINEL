@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Lock, Printer } from 'lucide-react';
-import { SentinelNav } from '@/components/sentinel-nav';
+import { Download, Printer } from 'lucide-react';
+import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 interface ClinicalReportData {
   patientId: string;
@@ -55,23 +56,14 @@ export default function ClinicianReportPage() {
   const isUnauth = query.error?.message === '401';
 
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <div className="print:hidden">
-        <SentinelNav title="Printable Clinical Summary" isSynthetic={query.data?.isSynthetic} />
-      </div>
-
-      <main className="mx-auto max-w-4xl space-y-6 px-4 py-8">
+    <SentinelShell
+      title="Printable Clinical Summary"
+      subtitle="Longitudinal telemetry summary & LOINC FHIR R4 Bundle export"
+      isSynthetic={query.data?.isSynthetic}
+    >
+      <main className="mx-auto max-w-4xl space-y-6">
         {isUnauth ? (
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-            <Lock className="mx-auto h-8 w-8 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="mt-3 text-xl font-semibold">Sign in to view Clinician Summary</h2>
-            <Link
-              href="/auth"
-              className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-[var(--brand-primary)] px-5 font-semibold text-[var(--brand-primary-fg)]"
-            >
-              Sign In
-            </Link>
-          </div>
+          <SignedOutGate heading="Sign in to view Clinician Summary" />
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
@@ -181,6 +173,6 @@ export default function ClinicianReportPage() {
           </>
         )}
       </main>
-    </div>
+    </SentinelShell>
   );
 }

@@ -3,8 +3,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, KeyRound, Lock, ShieldAlert, Sliders, Users } from 'lucide-react';
-import { SentinelNav } from '@/components/sentinel-nav';
+import { Download, KeyRound, ShieldAlert, Sliders, Users } from 'lucide-react';
+import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 interface ProfilePayload {
   profile: {
@@ -124,21 +125,13 @@ export default function SettingsPage() {
   const isUnauth = profileQuery.error?.message === '401';
 
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <SentinelNav title="Settings, Care Circle & DPDP Privacy" />
-
-      <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
+    <SentinelShell
+      title="Settings, Care Circle & DPDP Privacy"
+      subtitle="Quiet hours, daily alert budget, emergency contacts & DPDP Act 2023 data rights"
+    >
+      <main className="space-y-6">
         {isUnauth ? (
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-            <Lock className="mx-auto h-8 w-8 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="mt-3 text-xl font-semibold">Sign in to manage settings</h2>
-            <Link
-              href="/auth"
-              className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-[var(--brand-primary)] px-5 font-semibold text-[var(--brand-primary-fg)]"
-            >
-              Sign In
-            </Link>
-          </div>
+          <SignedOutGate heading="Sign in to manage settings" />
         ) : (
           <>
             {msg && (
@@ -355,6 +348,6 @@ export default function SettingsPage() {
           </>
         )}
       </main>
-    </div>
+    </SentinelShell>
   );
 }

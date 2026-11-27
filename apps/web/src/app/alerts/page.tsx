@@ -4,19 +4,17 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
   BellRing,
   CheckCircle2,
   Clock,
-  FlaskConical,
   Hospital,
-  Lock,
   PhoneCall,
   Radio,
   ShieldAlert,
   TrendingUp,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 interface AlertsResponse {
   patientId: string;
@@ -201,58 +199,29 @@ export default function AlertsOperationsPage() {
   const hasSynthetic = (alertsQuery.data?.alerts ?? []).some((a) => a.isSynthetic);
 
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-            <Link
-              href="/"
-              className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              <span>Home</span>
-            </Link>
-            <h1 className="font-[family-name:var(--font-display)] text-lg font-semibold sm:text-xl">
-              Alerts, Escalation & Outbox Delivery
-            </h1>
-            {hasSynthetic && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--status-synthetic-bg)] px-3 py-1 text-xs font-bold text-[var(--status-synthetic)]">
-                <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
-                SYNTHETIC
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              data-testid="sse-status"
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 py-1.5 text-xs font-medium"
-            >
-              <Radio
-                className={`h-3.5 w-3.5 ${sseConnected ? 'text-[var(--status-stable)]' : 'text-[var(--text-muted)]'}`}
-                aria-hidden="true"
-              />
-              <span>{sseConnected ? 'Live SSE' : 'Connecting SSE'}</span>
-            </span>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+    <SentinelShell
+      title="Alerts, Escalation & Outbox Delivery"
+      subtitle="Anti-fatigue notification routing, escalation ladder & Cloudflare inbound replies"
+      isSynthetic={hasSynthetic}
+      rightSlot={
+        <span
+          data-testid="sse-status"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 py-1 text-xs font-semibold"
+        >
+          <Radio
+            className={`h-3.5 w-3.5 ${sseConnected ? 'text-[var(--status-stable)]' : 'text-[var(--text-muted)]'}`}
+            aria-hidden="true"
+          />
+          <span>{sseConnected ? 'Live SSE' : 'Connecting SSE'}</span>
+        </span>
+      }
+    >
+      <main className="space-y-6">
         {isUnauth ? (
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-            <Lock className="mx-auto h-8 w-8 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="mt-3 text-xl font-semibold">Sign in required for Alerts & Escalation</h2>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
-              Sign in as a patient, caregiver, or clinician to view active alerts and outbox logs.
-            </p>
-            <Link
-              href="/auth"
-              className="mt-5 inline-flex min-h-12 items-center rounded-xl bg-[var(--brand-primary)] px-5 font-semibold text-[var(--brand-primary-fg)]"
-            >
-              Sign In
-            </Link>
-          </div>
+          <SignedOutGate
+            heading="Sign in required for Alerts & Escalation"
+            description="Sign in as a patient, caregiver, or clinician to view active alerts and outbox logs."
+          />
         ) : (
           <>
             {banner && (
@@ -500,6 +469,6 @@ export default function AlertsOperationsPage() {
           </>
         )}
       </main>
-    </div>
+    </SentinelShell>
   );
 }

@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { BarChart3, BookOpen, Database, FlaskConical, Lock, Play } from 'lucide-react';
-import { SentinelNav } from '@/components/sentinel-nav';
+import { BarChart3, BookOpen, Database, FlaskConical, Play } from 'lucide-react';
+import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 interface BenchmarkResult {
   datasetMode: string;
@@ -85,33 +86,23 @@ export default function EvaluationLabPage() {
   const isUnauth = datasetsQuery.error?.message === '401';
 
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <SentinelNav
-        title="Evaluation Lab & Ablations"
-        isSynthetic={Boolean(benchResult?.isSynthetic)}
-        rightSlot={
-          <Link
-            href="/model-card"
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] px-3 text-xs font-semibold hover:bg-[var(--bg-elevated)]"
-          >
-            <BookOpen className="h-4 w-4" aria-hidden="true" />
-            <span>Model Card</span>
-          </Link>
-        }
-      />
-
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
+    <SentinelShell
+      title="Evaluation Lab & Ablations"
+      subtitle="Walk-forward causal ablation metrics strictly evaluated without lookahead"
+      isSynthetic={Boolean(benchResult?.isSynthetic)}
+      rightSlot={
+        <Link
+          href="/model-card"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-xs font-semibold hover:bg-[var(--bg-elevated)]"
+        >
+          <BookOpen className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+          <span>Model Card</span>
+        </Link>
+      }
+    >
+      <main className="space-y-6">
         {isUnauth ? (
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-            <Lock className="mx-auto h-8 w-8 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="mt-3 text-xl font-semibold">Sign in to run Evaluation Lab</h2>
-            <Link
-              href="/auth"
-              className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-[var(--brand-primary)] px-5 font-semibold text-[var(--brand-primary-fg)]"
-            >
-              Sign In
-            </Link>
-          </div>
+          <SignedOutGate heading="Sign in to run Evaluation Lab" />
         ) : (
           <>
             <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
@@ -252,6 +243,6 @@ export default function EvaluationLabPage() {
           </>
         )}
       </main>
-    </div>
+    </SentinelShell>
   );
 }

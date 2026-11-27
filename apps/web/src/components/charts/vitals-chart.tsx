@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
+import { SyntheticBadge } from '@/components/health/status-badge';
 
 export interface VitalsChartPoint {
   timestamp: string;
@@ -10,6 +11,7 @@ export interface VitalsChartPoint {
   maxVal: number;
   confidence: number;
   context: string;
+  isSynthetic?: boolean;
 }
 
 export interface VitalsChartProps {
@@ -27,6 +29,8 @@ export interface VitalsChartProps {
   onRetry?: () => void;
   baselineStage?: string | null;
   validDays?: number | null;
+  isSynthetic?: boolean;
+  compact?: boolean;
 }
 
 export function VitalsChart({
@@ -44,9 +48,19 @@ export function VitalsChart({
   onRetry,
   baselineStage,
   validDays,
+  isSynthetic = false,
+  compact = false,
 }: VitalsChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+
+  const hasBand = typeof bandLow === 'number' && typeof bandHigh === 'number';
+  const latestPoint = points.length > 0 ? points[points.length - 1] : null;
+  const anySynthetic = isSynthetic || points.some((p) => p.isSynthetic);
+  const outsideBand =
+    hasBand &&
+    latestPoint &&
+    (latestPoint.value < bandLow! || latestPoint.value > bandHigh!);
 
   useEffect(() => {
     if (loading || error || points.length === 0 || !containerRef.current) {
@@ -58,14 +72,21 @@ export function VitalsChart({
 
     const times = points.map((p) => p.timestamp);
     const values = points.map((p) => p.value);
+    const baselineSeries =
+      typeof medianVal === 'number' ? points.map(() => medianVal) : undefined;
 
     const markLineData: Array<Record<string, unknown>> = [];
     if (typeof medianVal === 'number') {
       markLineData.push({
         name: 'Personal Median',
         yAxis: medianVal,
-        lineStyle: { color: '#0f766e', type: 'dashed', width: 1.5 },
-        label: { position: 'insideEndTop', formatter: `Normal ${medianVal} ${unit}` },
+        lineStyle: { color: '#047857', type: 'dashed', width: 1.5 },
+        label: {
+          position: 'insideEndTop',
+          formatter: `Normal ${medianVal}${unit ? ` ${unit}` : ''}`,
+          color: '#047857',
+          fontSize: 11,
+        },
       });
     }
 
@@ -76,7 +97,7 @@ export function VitalsChart({
           name: 'Change Point',
           xAxis: nearest,
           lineStyle: { color: '#b45309', type: 'dotted', width: 2 },
-          label: { formatter: 'Shift' },
+          label: { formatter: 'Shift', color: '#b45309', fontSize: 11 },
         });
       }
     }
@@ -88,7 +109,7 @@ export function VitalsChart({
           name: `${med.medName} (${med.status})`,
           xAxis: nearest,
           lineStyle: { color: '#0369a1', type: 'solid', width: 1.5 },
-          label: { formatter: `Rx:${med.status}` },
+          label: { formatter: `Rx:${med.status}`, color: '#0369a1', fontSize: 11 },
         });
       }
     }
@@ -98,24 +119,42 @@ export function VitalsChart({
         const idx = times.findIndex((t) => t.slice(0, 13) === ts.slice(0, 13));
         if (idx < 0) return null;
         return {
-          name: 'Alert Fired',
+          name: 'Alert Triggered',
           coord: [times[idx], values[idx]],
           itemStyle: { color: '#b91c1c' },
         };
       })
       .filter((x): x is { name: string; coord: [string, number]; itemStyle: { color: string } } => x !== null);
 
+    // Highlight individual readings outside the personal normal band
+    const seriesData = points.map((p) => {
+      const isOut = hasBand && (p.value < bandLow! || p.value > bandHigh!);
+      return isOut
+        ? {
+            value: p.value,
+            itemStyle: { color: '#b45309', borderColor: '#ffffff', borderWidth: 1.5 },
+            symbolSize: 7,
+          }
+        : p.value;
+    });
+
     const option: echarts.EChartsOption = {
       animation: false,
       tooltip: {
         trigger: 'axis',
-        valueFormatter: (val) => `${val} ${unit}`,
+        backgroundColor: 'rgba(15, 41, 40, 0.94)',
+        borderColor: '#0f766e',
+        textStyle: { color: '#f8fafc', fontSize: 12 },
+        valueFormatter: (val) => `${val}${unit ? ` ${unit}` : ''}`,
       },
-      grid: { left: 48, right: 20, top: 36, bottom: 64 },
+      grid: { left: 48, right: 20, top: 32, bottom: compact ? 36 : 64 },
       xAxis: {
         type: 'category',
         data: times,
+        axisLine: { lineStyle: { color: '#cbd5e1' } },
         axisLabel: {
+          color: '#425e5b',
+          fontSize: 11,
           formatter: (val: string) => {
             const d = new Date(val);
             return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}h`;
@@ -126,31 +165,54 @@ export function VitalsChart({
         type: 'value',
         scale: true,
         name: unit,
+        nameTextStyle: { color: '#425e5b', fontSize: 11 },
+        splitLine: { lineStyle: { color: 'rgba(15, 118, 110, 0.08)' } },
+        axisLabel: { color: '#425e5b', fontSize: 11 },
       },
-      dataZoom: [
-        { type: 'inside', start: 0, end: 100 },
-        { type: 'slider', start: 0, end: 100, height: 22, bottom: 8 },
-      ],
+      dataZoom: compact
+        ? [{ type: 'inside', start: 0, end: 100 }]
+        : [
+            { type: 'inside', start: 0, end: 100 },
+            { type: 'slider', start: 0, end: 100, height: 22, bottom: 8 },
+          ],
       series: [
         {
-          name: title,
+          name: `Actual ${title}`,
           type: 'line',
-          smooth: 0.2,
+          smooth: 0.25,
           showSymbol: points.length <= 48,
-          data: values,
-          lineStyle: { color: '#0f766e', width: 2.5 },
-          itemStyle: { color: '#0f766e' },
-          markArea:
-            typeof bandLow === 'number' && typeof bandHigh === 'number'
-              ? {
-                  silent: true,
-                  itemStyle: { color: 'rgba(15, 118, 110, 0.11)' },
-                  data: [[{ yAxis: bandLow }, { yAxis: bandHigh }]],
-                }
-              : undefined,
+          data: seriesData,
+          lineStyle: { color: '#0f3d4c', width: 2.5 },
+          itemStyle: { color: '#0f3d4c' },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(15, 118, 110, 0.14)' },
+              { offset: 1, color: 'rgba(15, 118, 110, 0.01)' },
+            ]),
+          },
+          markArea: hasBand
+            ? {
+                silent: true,
+                itemStyle: { color: 'rgba(4, 120, 87, 0.11)' },
+                data: [[{ yAxis: bandLow! }, { yAxis: bandHigh! }]],
+              }
+            : undefined,
           markLine: markLineData.length > 0 ? { data: markLineData as never } : undefined,
           markPoint: markPointData.length > 0 ? { data: markPointData as never } : undefined,
         },
+        ...(baselineSeries
+          ? [
+              {
+                name: 'Personal Normal',
+                type: 'line' as const,
+                showSymbol: false,
+                data: baselineSeries,
+                lineStyle: { color: '#047857', width: 1.5, type: 'dashed' as const },
+                itemStyle: { color: '#047857' },
+                silent: true,
+              },
+            ]
+          : []),
       ],
     };
 
@@ -169,7 +231,9 @@ export function VitalsChart({
     bandHigh,
     bandLow,
     changePoints,
+    compact,
     error,
+    hasBand,
     loading,
     medMarkers,
     medianVal,
@@ -183,7 +247,7 @@ export function VitalsChart({
       <div
         role="status"
         aria-label={`Loading ${title} chart`}
-        className="flex h-[320px] items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] text-sm text-[var(--text-muted)]"
+        className="flex h-[280px] items-center justify-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] text-sm text-[var(--text-muted)]"
       >
         Loading physiological trajectory...
       </div>
@@ -194,14 +258,14 @@ export function VitalsChart({
     return (
       <div
         role="alert"
-        className="flex h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-[var(--status-urgent)] bg-[var(--status-urgent-bg)] p-4 text-center"
+        className="flex h-[280px] flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--status-urgent)] bg-[var(--status-urgent-bg)] p-4 text-center"
       >
         <p className="text-sm font-medium text-[var(--status-urgent)]">{error}</p>
         {onRetry && (
           <button
             type="button"
             onClick={onRetry}
-            className="min-h-11 rounded-lg bg-[var(--brand-primary)] px-4 text-xs font-semibold text-[var(--brand-primary-fg)] cursor-pointer"
+            className="min-h-11 rounded-xl bg-[var(--brand-primary)] px-4 text-xs font-semibold text-[var(--brand-primary-fg)] cursor-pointer"
           >
             Retry Chart Load
           </button>
@@ -212,7 +276,7 @@ export function VitalsChart({
 
   if (points.length === 0) {
     return (
-      <div className="flex h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-base)] p-6 text-center text-sm text-[var(--text-muted)]">
+      <div className="flex h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-base)] p-6 text-center text-sm text-[var(--text-muted)]">
         <p className="font-semibold">No {title} samples recorded in this window yet.</p>
         <p className="mt-1 text-xs">Import Apple Health XML, CSV, or run Synthetic Scenario Mode.</p>
       </div>
@@ -221,26 +285,67 @@ export function VitalsChart({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
-        <span>
-          Personal normal band:{' '}
-          {typeof bandLow === 'number' && typeof bandHigh === 'number'
-            ? `${bandLow}–${bandHigh} ${unit}`
-            : 'Learning warm-up'}
-        </span>
-        {baselineStage && (
-          <span className="rounded-full border border-[var(--border-subtle)] px-2.5 py-0.5 font-semibold">
-            Baseline: {baselineStage} ({validDays ?? 0}d)
+      {/* Accessible Legend + Personal Baseline Comparison Summary */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-3" aria-label="Chart legend">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--text-primary)]">
+            <span className="inline-block h-0.5 w-4 rounded bg-[var(--brand-rail-active)]" aria-hidden="true" />
+            Actual Readings
           </span>
-        )}
+          {hasBand && (
+            <span className="inline-flex items-center gap-1.5 font-medium text-[var(--text-muted)]">
+              <span className="inline-block h-3 w-3 rounded bg-[var(--status-stable-bg)] border border-[var(--status-stable)]" aria-hidden="true" />
+              Personal Normal ({bandLow}–{bandHigh}{unit ? ` ${unit}` : ''})
+            </span>
+          )}
+          {changePoints.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 font-medium text-[var(--status-watch)]">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-[var(--status-watch)]" aria-hidden="true" />
+              Unusual Shift
+            </span>
+          )}
+          {alertTimestamps.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 font-medium text-[var(--status-urgent)]">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-[var(--status-urgent)]" aria-hidden="true" />
+              Alert Marker
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {anySynthetic && <SyntheticBadge />}
+          {baselineStage && (
+            <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-0.5 font-semibold text-[var(--text-muted)]">
+              Baseline: {baselineStage} ({validDays ?? 0}d)
+            </span>
+          )}
+        </div>
       </div>
+
+      {latestPoint && (
+        <p className="rounded-xl bg-[var(--bg-elevated)] px-3.5 py-2 text-xs text-[var(--text-muted)]">
+          Latest reading at{' '}
+          <span className="font-[family-name:var(--font-mono)] font-semibold text-[var(--text-primary)]">
+            {latestPoint.timestamp.slice(0, 16).replace('T', ' ')} UTC
+          </span>
+          :{' '}
+          <strong className="font-[family-name:var(--font-mono)] text-[var(--text-primary)]">
+            {latestPoint.value}
+            {unit ? ` ${unit}` : ''}
+          </strong>
+          {hasBand &&
+            (outsideBand
+              ? ` — outside your ${bandLow}–${bandHigh}${unit ? ` ${unit}` : ''} personal normal corridor.`
+              : ` — inside your ${bandLow}–${bandHigh}${unit ? ` ${unit}` : ''} personal normal corridor.`)}
+        </p>
+      )}
 
       <div
         ref={containerRef}
         role="img"
         data-testid="echarts-vitals-canvas"
-        aria-label={`${title} longitudinal chart`}
-        className="h-[320px] w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-2"
+        aria-label={`${title} physiological trend chart comparing actual readings to personal baseline`}
+        className={`${compact ? 'h-[250px]' : 'h-[320px]'} w-full rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2`}
       />
 
       <details className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 text-xs">
@@ -256,21 +361,23 @@ export function VitalsChart({
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-[var(--border-subtle)] text-[var(--text-muted)]">
-                <th className="py-1 pr-3">Hour (UTC)</th>
-                <th className="py-1 pr-3">Median ({unit})</th>
-                <th className="py-1 pr-3">Range</th>
-                <th className="py-1">Confidence</th>
+                <th className="py-1.5 pr-3">Hour (UTC)</th>
+                <th className="py-1.5 pr-3">Actual ({unit || 'val'})</th>
+                <th className="py-1.5 pr-3">Range</th>
+                <th className="py-1.5 pr-3">Context</th>
+                <th className="py-1.5">Confidence</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-subtle)] font-[family-name:var(--font-mono)]">
               {points.slice(-16).map((p) => (
                 <tr key={p.timestamp}>
-                  <td className="py-1 pr-3">{p.timestamp.slice(0, 16).replace('T', ' ')}</td>
-                  <td className="py-1 pr-3">{p.value}</td>
-                  <td className="py-1 pr-3">
+                  <td className="py-1.5 pr-3">{p.timestamp.slice(0, 16).replace('T', ' ')}</td>
+                  <td className="py-1.5 pr-3 font-semibold">{p.value}</td>
+                  <td className="py-1.5 pr-3">
                     {p.minVal}–{p.maxVal}
                   </td>
-                  <td className="py-1">{p.confidence}</td>
+                  <td className="py-1.5 pr-3 font-sans">{p.context}</td>
+                  <td className="py-1.5">{p.confidence}</td>
                 </tr>
               ))}
             </tbody>

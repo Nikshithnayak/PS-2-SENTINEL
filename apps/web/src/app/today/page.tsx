@@ -4,17 +4,24 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Activity,
   AlertTriangle,
+  BellRing,
   CheckCircle2,
   Eye,
   HeartPulse,
   HelpCircle,
-  Lock,
   PhoneCall,
   Pill,
   Volume2,
+  Wind,
 } from 'lucide-react';
-import { SentinelNav } from '@/components/sentinel-nav';
+import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
+import { ActivityRingCard } from '@/components/health/activity-ring-card';
+import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { SleepQualityCard } from '@/components/health/sleep-quality-card';
+import { StatusBadge } from '@/components/health/status-badge';
+import { SentinelShell } from '@/components/sentinel-shell';
 import { VoiceCheckinCompanion } from '@/components/voice/voice-checkin';
 
 interface PatientDashboardData {
@@ -23,10 +30,12 @@ interface PatientDashboardData {
   locale: 'en' | 'kn' | 'hi';
   emergencyNumber: string;
   ambulanceNumber: string;
+  city?: string;
   isSynthetic: boolean;
   silence: {
     hoursSilent: number | null;
     isSilent: boolean;
+    wearRatio7d?: number;
   };
   latestAssessment: {
     assessedAt: string;
@@ -49,6 +58,15 @@ interface PatientDashboardData {
     status: string;
     validDays: number;
   }>;
+  alerts?: Array<{
+    id: string;
+    level: string;
+    status: string;
+    summaryEn: string;
+    escalationStep: number;
+    createdAt: string;
+    isSynthetic: boolean;
+  }>;
   checkins: Array<{
     id: string;
     kind: string;
@@ -62,6 +80,20 @@ interface PatientDashboardData {
     scheduleTimes: string[];
     affectsHeartRate: boolean;
   }>;
+}
+
+interface SeriesResponse {
+  metricType: string;
+  baseline: {
+    stage: string;
+    validDays: number;
+    medianVal: number;
+    bandLow: number | null;
+    bandHigh: number | null;
+  } | null;
+  points: VitalsChartPoint[];
+  changePoints: string[];
+  alertMarkers: Array<{ timestamp: string }>;
 }
 
 const COPY = {
@@ -103,9 +135,17 @@ const COPY = {
   },
 };
 
+const TREND_METRICS = [
+  { id: 'resting_heart_rate', label: 'Heart Rate', unit: 'bpm' },
+  { id: 'spo2', label: 'SpO₂', unit: '%' },
+  { id: 'respiratory_rate', label: 'Breathing', unit: '/min' },
+  { id: 'hrv_rmssd', label: 'HRV', unit: 'ms' },
+] as const;
+
 export default function PatientTodayPage() {
   const qc = useQueryClient();
   const [lang, setLang] = useState<'en' | 'kn' | 'hi'>('en');
+  const [chartMetric, setChartMetric] = useState<string>('resting_heart_rate');
   const [showWhy, setShowWhy] = useState(false);
   const [showSymptoms, setShowSymptoms] = useState(false);
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
@@ -118,6 +158,51 @@ export default function PatientTodayPage() {
       if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
+  });
+
+  const patientId = query.data?.patientId;
+  const fetchSeries = async (metric: string): Promise<SeriesResponse> => {
+    const res = await fetch(
+      `/api/v1/vitals/series?patientId=${patientId}&metric=${metric}&window=7d`,
+    );
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.json();
+  };
+
+  const rhrQuery = useQuery<SeriesResponse>({
+    queryKey: ['today-series', patientId, 'resting_heart_rate'],
+    enabled: Boolean(patientId),
+    queryFn: () => fetchSeries('resting_heart_rate'),
+  });
+
+  const spo2Query = useQuery<SeriesResponse>({
+    queryKey: ['today-series', patientId, 'spo2'],
+    enabled: Boolean(patientId),
+    queryFn: () => fetchSeries('spo2'),
+  });
+
+  const stepsQuery = useQuery<SeriesResponse>({
+    queryKey: ['today-series', patientId, 'steps'],
+    enabled: Boolean(patientId),
+    queryFn: () => fetchSeries('steps'),
+  });
+
+  const sleepDurQuery = useQuery<SeriesResponse>({
+    queryKey: ['today-series', patientId, 'sleep_duration_min'],
+    enabled: Boolean(patientId),
+    queryFn: () => fetchSeries('sleep_duration_min'),
+  });
+
+  const sleepEffQuery = useQuery<SeriesResponse>({
+    queryKey: ['today-series', patientId, 'sleep_efficiency'],
+    enabled: Boolean(patientId),
+    queryFn: () => fetchSeries('sleep_efficiency'),
+  });
+
+  const selectedChartQuery = useQuery<SeriesResponse>({
+    queryKey: ['today-series', patientId, chartMetric],
+    enabled: Boolean(patientId),
+    queryFn: () => fetchSeries(chartMetric),
   });
 
   const checkinMutation = useMutation({
@@ -144,7 +229,7 @@ export default function PatientTodayPage() {
       setCheckinMsg(
         vars.kind === 'tap_ok'
           ? 'Saved: I feel okay today. Shared with your care circle.'
-          : 'Saved: Care circle alerted that you are not feeling well.',
+          : 'Saved: Care circle notified that you asked for support.',
       );
       qc.invalidateQueries({ queryKey: ['dashboard-patient'] });
     },
@@ -191,8 +276,8 @@ export default function PatientTodayPage() {
     warning: {
       title: copy.warningTitle,
       Icon: AlertTriangle,
-      boxClass: 'border-[var(--status-watch)] bg-[var(--status-watch-bg)]',
-      textClass: 'text-[var(--status-watch)]',
+      boxClass: 'border-[var(--status-warning)] bg-[var(--status-warning-bg)]',
+      textClass: 'text-[var(--status-warning)]',
     },
     urgent: {
       title: copy.urgentTitle,
@@ -212,7 +297,7 @@ export default function PatientTodayPage() {
 
   const summarySentence =
     localizedExplanation ??
-    'No wearable summary calculated yet. Upload watch data or check back once telemetry arrives.';
+    'No wearable summary calculated yet. Import watch data or check back once telemetry arrives.';
 
   function readAloud() {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -223,97 +308,91 @@ export default function PatientTodayPage() {
     window.speechSynthesis.speak(utter);
   }
 
-  return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)] text-[18px]">
-      <SentinelNav
-        title="Patient Today (Elder Mode)"
-        isSynthetic={query.data?.isSynthetic}
-        rightSlot={
-          <div className="flex items-center gap-1" role="group" aria-label="Language selector">
-            {(['en', 'kn', 'hi'] as const).map((code) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => setLang(code)}
-                className={`min-h-11 rounded-lg border px-3 text-sm font-bold cursor-pointer ${
-                  lang === code
-                    ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
-                    : 'border-[var(--border-subtle)]'
-                }`}
-              >
-                {code === 'en' ? 'EN' : code === 'kn' ? 'ಕನ್ನಡ' : 'हिन्दी'}
-              </button>
-            ))}
-          </div>
-        }
-      />
+  const latestRhr = rhrQuery.data?.points[rhrQuery.data.points.length - 1];
+  const latestSpo2 = spo2Query.data?.points[spo2Query.data.points.length - 1];
+  const activeChartMeta = TREND_METRICS.find((m) => m.id === chartMetric) ?? TREND_METRICS[0];
+  const recentAlerts = (query.data?.alerts ?? []).slice(0, 3);
 
-      <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
-        {isUnauth ? (
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-            <Lock className="mx-auto h-10 w-10 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="mt-3 text-2xl font-semibold">Sign in for Patient Today view</h2>
-            <Link
-              href="/auth"
-              className="mt-5 inline-flex min-h-14 items-center rounded-xl bg-[var(--brand-primary)] px-6 text-lg font-semibold text-[var(--brand-primary-fg)]"
+  return (
+    <SentinelShell
+      title="Patient Today (Elder Mode)"
+      subtitle={
+        query.data
+          ? `${copy.greeting}, ${query.data.patientFirstName} · ${query.data.city ?? 'Home Care'}`
+          : 'Calm daily overview in plain language'
+      }
+      isSynthetic={query.data?.isSynthetic}
+      rightSlot={
+        <div
+          className="flex items-center gap-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-1"
+          role="group"
+          aria-label="Language selector"
+        >
+          {(['en', 'kn', 'hi'] as const).map((code) => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => setLang(code)}
+              className={`min-h-10 rounded-lg px-3 text-sm font-bold transition cursor-pointer ${
+                lang === code
+                  ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
+                  : 'text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+              }`}
             >
-              Sign In
-            </Link>
-          </div>
+              {code === 'en' ? 'EN' : code === 'kn' ? 'ಕನ್ನಡ' : 'हिन्दी'}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <main className="space-y-6 text-[18px]">
+        {isUnauth ? (
+          <SignedOutGate heading="Sign in for Patient Today view" />
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xl font-semibold">
-                {copy.greeting}, {query.data?.patientFirstName ?? 'Friend'}
-              </p>
-              <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-1.5 text-sm font-medium">
-                {query.data?.baselines[0]
-                  ? `Baseline: ${query.data.baselines[0].status} (${query.data.baselines[0].validDays} days)`
-                  : 'Baseline: Learning'}
-              </span>
-            </div>
-
-            {checkinMsg && (
-              <div
-                role="status"
-                className="rounded-2xl border border-[var(--status-stable)] bg-[var(--status-stable-bg)] p-4 text-lg font-medium text-[var(--status-stable)]"
-              >
-                {checkinMsg}
-              </div>
-            )}
-
-            {/* Primary Elder Calm Status Card */}
+            {/* Top Calm Elder Greeting & Overall Status */}
             <section
               aria-label="Today's personal health status"
-              className={`rounded-3xl border-2 p-6 sm:p-8 ${statusMeta.boxClass}`}
+              className={`rounded-3xl border-2 p-6 sm:p-7 ${statusMeta.boxClass}`}
             >
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <StatusIcon className={`h-9 w-9 shrink-0 ${statusMeta.textClass}`} aria-hidden="true" />
-                  <h2 className={`font-[family-name:var(--font-display)] text-2xl font-bold sm:text-3xl ${statusMeta.textClass}`}>
-                    {statusMeta.title}
-                  </h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xl font-bold text-[var(--text-primary)]">
+                    {copy.greeting}, {query.data?.patientFirstName ?? 'Friend'}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <StatusIcon className={`h-8 w-8 shrink-0 ${statusMeta.textClass}`} aria-hidden="true" />
+                    <h2
+                      className={`font-[family-name:var(--font-display)] text-2xl font-bold sm:text-3xl ${statusMeta.textClass}`}
+                    >
+                      {statusMeta.title}
+                    </h2>
+                  </div>
                 </div>
-                <span className="rounded-full bg-[var(--bg-surface)] px-4 py-1.5 font-[family-name:var(--font-mono)] text-base font-bold uppercase">
-                  {level}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge level={level} size="md" />
+                  <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-1.5 text-sm font-semibold">
+                    {query.data?.baselines[0]
+                      ? `Baseline: ${query.data.baselines[0].status} (${query.data.baselines[0].validDays}d)`
+                      : 'Baseline: Learning'}
+                  </span>
+                </div>
               </div>
 
               <p className="mt-4 text-xl leading-relaxed text-[var(--text-primary)]">
                 {summarySentence}
               </p>
-
-              <p className="mt-2 text-sm text-[var(--text-muted)]">
+              <p className="mt-1.5 text-sm text-[var(--text-muted)]">
                 Early awareness only — changes from your personal normal, not a medical diagnosis.
               </p>
 
-              <div className="mt-6 flex flex-wrap gap-3">
+              <div className="mt-5 flex flex-wrap gap-3">
                 <button
                   type="button"
                   onClick={readAloud}
                   className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-5 text-lg font-semibold hover:bg-[var(--bg-elevated)] cursor-pointer"
                 >
-                  <Volume2 className="h-5 w-5" aria-hidden="true" />
+                  <Volume2 className="h-5 w-5 text-[var(--brand-primary)]" aria-hidden="true" />
                   <span>{copy.readAloud}</span>
                 </button>
                 <button
@@ -322,7 +401,7 @@ export default function PatientTodayPage() {
                   aria-expanded={showWhy}
                   className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-5 text-lg font-semibold hover:bg-[var(--bg-elevated)] cursor-pointer"
                 >
-                  <HelpCircle className="h-5 w-5" aria-hidden="true" />
+                  <HelpCircle className="h-5 w-5 text-[var(--brand-primary)]" aria-hidden="true" />
                   <span>{copy.whyBtn}</span>
                 </button>
               </div>
@@ -330,19 +409,19 @@ export default function PatientTodayPage() {
               {showWhy && (
                 <div
                   data-testid="why-drawer"
-                  className="mt-5 space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5"
+                  className="clinical-card mt-5 space-y-3 p-5"
                 >
                   <h3 className="text-lg font-semibold">What changed from your personal normal:</h3>
                   {(query.data?.latestAssessment?.contributions ?? []).length === 0 ? (
                     <p className="text-base text-[var(--text-muted)]">
-                      Run a baseline check on Data & Import or wear your watch to populate signal bars.
+                      Run a baseline check on Data Import or wear your watch to populate signal comparisons.
                     </p>
                   ) : (
                     <ul className="space-y-2.5 text-base">
                       {(query.data?.latestAssessment?.contributions ?? []).slice(0, 4).map((c) => (
                         <li
                           key={c.metricType}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-subtle)] p-3"
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5"
                         >
                           <span className="font-medium">{c.message}</span>
                           <span className="font-[family-name:var(--font-mono)] text-sm text-[var(--text-muted)]">
@@ -356,142 +435,365 @@ export default function PatientTodayPage() {
               )}
             </section>
 
-            {/* Quick Check-in Big Elder Buttons (>= 56px height, >= 12px gap) */}
-            <section className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
-              <div className="flex items-center gap-2">
-                <HeartPulse className="h-6 w-6 text-[var(--brand-primary)]" aria-hidden="true" />
-                <h2 className="text-xl font-semibold">Quick Daily Check-In</h2>
-              </div>
+            {/* 3-Column Bento Dashboard Grid inspired by Stitch Clinical Layout */}
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 items-start">
+              {/* Column 1: Daily Activity & Sleep Quality */}
+              <section
+                aria-label="Daily activity and sleep"
+                className="mint-bento space-y-5 p-4 sm:p-5 xl:col-span-4"
+              >
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="font-[family-name:var(--font-display)] text-lg font-bold">
+                    Activity &amp; Sleep
+                  </h2>
+                  <Link
+                    href="/signals"
+                    className="text-sm font-semibold text-[var(--brand-accent-text)] hover:underline"
+                  >
+                    Full trends →
+                  </Link>
+                </div>
 
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => checkinMutation.mutate({ kind: 'tap_ok' })}
-                  disabled={checkinMutation.isPending}
-                  className="min-h-14 rounded-2xl bg-[var(--status-stable)] px-6 py-4 text-xl font-bold text-white cursor-pointer"
-                >
-                  {copy.feelOkay}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSymptoms((v) => !v)}
-                  className="min-h-14 rounded-2xl border-2 border-[var(--status-watch)] bg-[var(--status-watch-bg)] px-6 py-4 text-xl font-bold text-[var(--status-watch)] cursor-pointer"
-                >
-                  {copy.notWell}
-                </button>
-              </div>
+                <ActivityRingCard
+                  points={stepsQuery.data?.points ?? []}
+                  medianHourlySteps={stepsQuery.data?.baseline?.medianVal}
+                  loading={stepsQuery.isLoading}
+                />
 
-              {showSymptoms && (
-                <div className="mt-4 space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4">
-                  <p className="text-base font-semibold">Tap any symptoms and send to caregiver:</p>
-                  <div className="flex flex-wrap gap-3">
-                    {['Feverish', 'Short of breath', 'Dizzy', 'Very tired', 'Chest tightness'].map((sym) => {
-                      const active = selectedSymptoms.includes(sym);
-                      return (
-                        <button
-                          key={sym}
-                          type="button"
-                          onClick={() =>
-                            setSelectedSymptoms((prev) =>
-                              prev.includes(sym) ? prev.filter((s) => s !== sym) : [...prev, sym],
-                            )
-                          }
-                          className={`min-h-12 rounded-xl border px-4 text-base font-semibold cursor-pointer ${
-                            active
-                              ? 'border-[var(--status-watch)] bg-[var(--status-watch)] text-white'
-                              : 'border-[var(--border-subtle)] bg-[var(--bg-surface)]'
-                          }`}
-                        >
-                          {sym}
-                        </button>
-                      );
-                    })}
+                <SleepQualityCard
+                  durationPoints={sleepDurQuery.data?.points ?? []}
+                  efficiencyPoints={sleepEffQuery.data?.points ?? []}
+                  durationMedian={sleepDurQuery.data?.baseline?.medianVal}
+                  efficiencyMedian={sleepEffQuery.data?.baseline?.medianVal}
+                  loading={sleepDurQuery.isLoading}
+                />
+              </section>
+
+              {/* Column 2: Your Health Overview — 7-Day Trend, HR, SpO2 & Alerts */}
+              <section
+                aria-label="Your health overview"
+                className="mint-bento space-y-5 p-4 sm:p-5 xl:col-span-5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                  <h2 className="font-[family-name:var(--font-display)] text-lg font-bold">
+                    Your Health Overview
+                  </h2>
+                  <div className="flex flex-wrap gap-1">
+                    {TREND_METRICS.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setChartMetric(m.id)}
+                        className={`min-h-9 rounded-lg px-2.5 text-xs font-semibold transition cursor-pointer ${
+                          chartMetric === m.id
+                            ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)]'
+                            : 'bg-[var(--bg-surface)] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
                   </div>
+                </div>
+
+                <div className="clinical-card p-5">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                        7-Day Trend vs Personal Normal
+                      </p>
+                      <h3 className="font-[family-name:var(--font-display)] text-lg font-bold">
+                        {activeChartMeta.label} ({activeChartMeta.unit})
+                      </h3>
+                    </div>
+                  </div>
+                  <VitalsChart
+                    compact
+                    title={activeChartMeta.label}
+                    unit={activeChartMeta.unit}
+                    points={selectedChartQuery.data?.points ?? []}
+                    bandLow={selectedChartQuery.data?.baseline?.bandLow}
+                    bandHigh={selectedChartQuery.data?.baseline?.bandHigh}
+                    medianVal={selectedChartQuery.data?.baseline?.medianVal}
+                    changePoints={selectedChartQuery.data?.changePoints ?? []}
+                    alertTimestamps={(selectedChartQuery.data?.alertMarkers ?? []).map(
+                      (a) => a.timestamp,
+                    )}
+                    loading={selectedChartQuery.isLoading}
+                    error={selectedChartQuery.isError ? 'Unable to load 7-day trend.' : null}
+                    onRetry={() => selectedChartQuery.refetch()}
+                    baselineStage={selectedChartQuery.data?.baseline?.stage}
+                    validDays={selectedChartQuery.data?.baseline?.validDays}
+                    isSynthetic={query.data?.isSynthetic}
+                  />
+                </div>
+
+                {/* Heart Rate & SpO2 Snapshot Cards */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <article className="clinical-card p-5">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                      <Activity className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+                      <span>Resting Heart Rate</span>
+                    </div>
+                    <p className="mt-2 font-[family-name:var(--font-mono)] text-3xl font-bold tabular-nums">
+                      {latestRhr ? `${latestRhr.value} bpm` : '—'}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">
+                      {rhrQuery.data?.baseline?.bandLow != null &&
+                      rhrQuery.data?.baseline?.bandHigh != null
+                        ? `Your normal: ${rhrQuery.data.baseline.bandLow}–${rhrQuery.data.baseline.bandHigh} bpm`
+                        : 'Personal baseline learning'}
+                    </p>
+                  </article>
+
+                  <article className="clinical-card p-5">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                      <Wind className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+                      <span>SpO₂ Oxygen Level</span>
+                    </div>
+                    <p className="mt-2 font-[family-name:var(--font-mono)] text-3xl font-bold tabular-nums">
+                      {latestSpo2 ? `${latestSpo2.value}%` : '—'}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">
+                      {spo2Query.data?.baseline?.bandLow != null &&
+                      spo2Query.data?.baseline?.bandHigh != null
+                        ? `Your normal: ${spo2Query.data.baseline.bandLow}–${spo2Query.data.baseline.bandHigh}%`
+                        : 'Personal baseline learning'}
+                    </p>
+                  </article>
+                </div>
+
+                {/* Recent Alerts Summary */}
+                <article className="clinical-card p-5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <BellRing className="h-5 w-5 text-[var(--brand-primary)]" aria-hidden="true" />
+                      <h3 className="font-[family-name:var(--font-display)] text-lg font-bold">
+                        Recent Alerts
+                      </h3>
+                    </div>
+                    <Link
+                      href="/alerts"
+                      className="text-sm font-semibold text-[var(--brand-accent-text)] hover:underline"
+                    >
+                      View all →
+                    </Link>
+                  </div>
+                  {recentAlerts.length === 0 ? (
+                    <p className="mt-3 text-base text-[var(--text-muted)]">
+                      No recent alerts recorded. You and your care circle will be notified here if a
+                      sustained change appears.
+                    </p>
+                  ) : (
+                    <ul className="mt-3 space-y-2.5 text-base">
+                      {recentAlerts.map((al) => (
+                        <li
+                          key={al.id}
+                          className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <StatusBadge level={al.level} />
+                            <span className="font-[family-name:var(--font-mono)] text-xs text-[var(--text-muted)]">
+                              {new Date(al.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-base font-medium">{al.summaryEn}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              </section>
+
+              {/* Column 3: Care Circle Contact, Daily Check-In, Voice & Medications */}
+              <section
+                aria-label="Caregiver contact, daily check-in, and medications"
+                className="mint-bento space-y-5 p-4 sm:p-5 xl:col-span-3"
+              >
+                <h2 className="px-1 font-[family-name:var(--font-display)] text-lg font-bold">
+                  Care &amp; Support
+                </h2>
+
+                {checkinMsg && (
+                  <div
+                    role="status"
+                    className="rounded-2xl border border-[var(--status-stable)] bg-[var(--status-stable-bg)] p-4 text-base font-semibold text-[var(--status-stable)]"
+                  >
+                    {checkinMsg}
+                  </div>
+                )}
+
+                {/* Quick Daily Check-in */}
+                <div className="clinical-card p-5">
+                  <div className="flex items-center gap-2">
+                    <HeartPulse className="h-5 w-5 text-[var(--brand-primary)]" aria-hidden="true" />
+                    <h3 className="font-[family-name:var(--font-display)] text-lg font-bold">
+                      Quick Daily Check-In
+                    </h3>
+                  </div>
+
+                  <div className="mt-4 grid gap-3">
+                    <button
+                      type="button"
+                      onClick={() => checkinMutation.mutate({ kind: 'tap_ok' })}
+                      disabled={checkinMutation.isPending}
+                      className="min-h-14 rounded-2xl bg-[var(--status-stable)] px-5 py-3 text-lg font-bold text-white transition hover:opacity-95 cursor-pointer"
+                    >
+                      {copy.feelOkay}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSymptoms((v) => !v)}
+                      className="min-h-14 rounded-2xl border-2 border-[var(--status-watch)] bg-[var(--status-watch-bg)] px-5 py-3 text-lg font-bold text-[var(--status-watch)] cursor-pointer"
+                    >
+                      {copy.notWell}
+                    </button>
+                  </div>
+
+                  {showSymptoms && (
+                    <div className="mt-4 space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4">
+                      <p className="text-base font-semibold">Tap any symptoms and alert caregiver:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {['Feverish', 'Short of breath', 'Dizzy', 'Very tired', 'Chest tightness'].map(
+                          (sym) => {
+                            const active = selectedSymptoms.includes(sym);
+                            return (
+                              <button
+                                key={sym}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedSymptoms((prev) =>
+                                    prev.includes(sym)
+                                      ? prev.filter((s) => s !== sym)
+                                      : [...prev, sym],
+                                  )
+                                }
+                                className={`min-h-11 rounded-xl border px-3 text-sm font-semibold cursor-pointer ${
+                                  active
+                                    ? 'border-[var(--status-watch)] bg-[var(--status-watch)] text-white'
+                                    : 'border-[var(--border-subtle)] bg-[var(--bg-surface)]'
+                                }`}
+                              >
+                                {sym}
+                              </button>
+                            );
+                          },
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          checkinMutation.mutate({
+                            kind: 'tap_unwell',
+                            symptoms: selectedSymptoms,
+                          })
+                        }
+                        className="min-h-12 w-full rounded-xl bg-[var(--brand-primary)] px-4 text-base font-bold text-[var(--brand-primary-fg)] cursor-pointer"
+                      >
+                        Send Update to Care Circle
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* One-Tap Caregiver Contact & Emergency Card */}
+                <div className="clinical-card space-y-3 p-5">
+                  <p className="text-base font-bold text-[var(--text-primary)]">
+                    One-Tap Caregiver Contact
+                  </p>
                   <button
                     type="button"
                     onClick={() =>
-                      checkinMutation.mutate({ kind: 'tap_unwell', symptoms: selectedSymptoms })
+                      checkinMutation.mutate({
+                        kind: 'tap_unwell',
+                        symptoms: ['Caregiver callback requested'],
+                      })
                     }
-                    className="min-h-14 w-full rounded-xl bg-[var(--brand-primary)] px-5 text-lg font-bold text-[var(--brand-primary-fg)] cursor-pointer"
+                    disabled={checkinMutation.isPending}
+                    className="inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[var(--brand-primary)] px-4 text-base font-bold text-[var(--brand-primary-fg)] transition hover:opacity-95 cursor-pointer"
                   >
-                    Send Update to Care Circle
+                    <PhoneCall className="h-5 w-5" aria-hidden="true" />
+                    <span>Ping Caregiver Now</span>
                   </button>
-                </div>
-              )}
-            </section>
 
-            {/* Voice Check-In Companion */}
+                  <div className="rounded-2xl border-2 border-[var(--status-urgent)] bg-[var(--status-urgent-bg)] p-4">
+                    <p className="text-base font-bold text-[var(--status-urgent)]">
+                      {copy.callEmergency}
+                    </p>
+                    <p className="mt-0.5 text-sm font-medium text-[var(--text-primary)]">
+                      Emergency: {query.data?.emergencyNumber ?? '112'} · Ambulance:{' '}
+                      {query.data?.ambulanceNumber ?? '108'}
+                    </p>
+                    <Link
+                      href="/alerts"
+                      className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--status-urgent)] px-4 text-base font-bold text-white"
+                    >
+                      <PhoneCall className="h-4 w-4" aria-hidden="true" />
+                      <span>Call Care / 112 Options</span>
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Today's Medication Schedule */}
+                {(query.data?.medications ?? []).length > 0 && (
+                  <div className="clinical-card p-5">
+                    <div className="flex items-center gap-2">
+                      <Pill className="h-5 w-5 text-[var(--brand-primary)]" aria-hidden="true" />
+                      <h3 className="font-[family-name:var(--font-display)] text-lg font-bold">
+                        Today&apos;s Medication Check
+                      </h3>
+                    </div>
+                    <ul className="mt-3 space-y-3">
+                      {(query.data?.medications ?? []).map((med) => (
+                        <li
+                          key={med.id}
+                          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5"
+                        >
+                          <p className="text-base font-semibold">
+                            {med.name} · {med.dosage}
+                          </p>
+                          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+                            Schedule: {med.scheduleTimes.join(', ')}
+                            {med.affectsHeartRate ? ' · Influences heart rate trend' : ''}
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                medMutation.mutate({ medicationId: med.id, status: 'taken' })
+                              }
+                              className="min-h-12 flex-1 rounded-xl bg-[var(--status-stable)] px-3 text-sm font-bold text-white cursor-pointer"
+                            >
+                              Mark Taken
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                medMutation.mutate({ medicationId: med.id, status: 'missed' })
+                              }
+                              className="min-h-12 flex-1 rounded-xl border border-[var(--status-watch)] bg-[var(--status-watch-bg)] px-3 text-sm font-bold text-[var(--status-watch)] cursor-pointer"
+                            >
+                              Missed Dose
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {/* Voice Check-In Companion (Preserves voice red-flag accessibility) */}
             <VoiceCheckinCompanion
               patientId={query.data?.patientId}
               locale={lang}
               isSynthetic={Boolean(query.data?.isSynthetic)}
               onRecorded={() => qc.invalidateQueries({ queryKey: ['dashboard-patient'] })}
             />
-
-            {/* Daily Medication Schedule & Adherence Overlay */}
-            {(query.data?.medications ?? []).length > 0 && (
-              <section className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
-                <div className="flex items-center gap-2">
-                  <Pill className="h-6 w-6 text-[var(--brand-primary)]" aria-hidden="true" />
-                  <h2 className="text-xl font-semibold">Today&apos;s Medication Check</h2>
-                </div>
-                <ul className="mt-4 space-y-3">
-                  {(query.data?.medications ?? []).map((med) => (
-                    <li
-                      key={med.id}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-4"
-                    >
-                      <div>
-                        <p className="text-lg font-semibold">
-                          {med.name} · {med.dosage}
-                        </p>
-                        <p className="text-sm text-[var(--text-muted)]">
-                          Schedule: {med.scheduleTimes.join(', ')}
-                          {med.affectsHeartRate ? ' · Influences heart rate trend' : ''}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => medMutation.mutate({ medicationId: med.id, status: 'taken' })}
-                          className="min-h-12 rounded-xl bg-[var(--status-stable)] px-4 text-base font-bold text-white cursor-pointer"
-                        >
-                          Mark Taken
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => medMutation.mutate({ medicationId: med.id, status: 'missed' })}
-                          className="min-h-12 rounded-xl border border-[var(--status-watch)] px-4 text-base font-bold text-[var(--status-watch)] cursor-pointer"
-                        >
-                          Missed Dose
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {/* Unmistakable Emergency Card */}
-            <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-[var(--status-urgent)] bg-[var(--bg-surface)] p-5">
-              <div>
-                <p className="text-lg font-bold text-[var(--status-urgent)]">{copy.callEmergency}</p>
-                <p className="text-sm text-[var(--text-muted)]">
-                  Emergency: {query.data?.emergencyNumber ?? '112'} · Ambulance:{' '}
-                  {query.data?.ambulanceNumber ?? '108'}
-                </p>
-              </div>
-              <Link
-                href="/alerts"
-                className="inline-flex min-h-14 items-center gap-2 rounded-xl bg-[var(--status-urgent)] px-5 text-lg font-bold text-white"
-              >
-                <PhoneCall className="h-5 w-5" aria-hidden="true" />
-                <span>Call Care / 112 Options</span>
-              </Link>
-            </section>
           </>
         )}
       </main>
-    </div>
+    </SentinelShell>
   );
 }

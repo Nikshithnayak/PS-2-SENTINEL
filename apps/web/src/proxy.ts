@@ -5,7 +5,7 @@ const CSP_HEADER = [
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://lh3.googleusercontent.com",
   "connect-src 'self' ws: wss: https://api.open-meteo.com https://air-quality-api.open-meteo.com https://nominatim.openstreetmap.org https://overpass-api.de https://rxnav.nlm.nih.gov https://api.fda.gov",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",

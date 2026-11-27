@@ -1,0 +1,288 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import type { Role } from '@sentinel/shared';
+import {
+  Activity,
+  BarChart3,
+  BellRing,
+  BookOpen,
+  Database,
+  FileText,
+  HeartHandshake,
+  LineChart,
+  LogIn,
+  Palette,
+  Settings,
+  ShieldCheck,
+  Stethoscope,
+  Users,
+} from 'lucide-react';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { SyntheticBadge } from '@/components/health/status-badge';
+import { authClient } from '@/lib/auth-client';
+
+interface NavLinkItem {
+  href: string;
+  label: string;
+  icon: typeof Activity;
+}
+
+interface NavGroup {
+  id: 'patient' | 'caregiver' | 'clinician' | 'admin';
+  title: string;
+  roles: Role[] | 'all';
+  items: NavLinkItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'patient',
+    title: 'Patient',
+    roles: 'all',
+    items: [
+      { href: '/today', label: 'Today', icon: HeartHandshake },
+      { href: '/signals', label: 'Health Trends', icon: LineChart },
+      { href: '/alerts', label: 'Alerts', icon: BellRing },
+    ],
+  },
+  {
+    id: 'caregiver',
+    title: 'Caregiver',
+    roles: ['caregiver', 'clinician', 'org_admin'],
+    items: [
+      { href: '/caregiver', label: 'Overview', icon: ShieldCheck },
+      { href: '/settings/consent', label: 'Care Circle', icon: Users },
+      { href: '/alerts', label: 'Notifications', icon: BellRing },
+    ],
+  },
+  {
+    id: 'clinician',
+    title: 'Clinician',
+    roles: ['clinician', 'org_admin', 'caregiver'],
+    items: [
+      { href: '/clinician', label: 'Patient Overview', icon: Stethoscope },
+      { href: '/clinician/report', label: 'Clinical Reports', icon: FileText },
+    ],
+  },
+  {
+    id: 'admin',
+    title: 'Administration',
+    roles: 'all',
+    items: [
+      { href: '/ingest', label: 'Data Import', icon: Database },
+      { href: '/settings/consent', label: 'Consent', icon: Users },
+      { href: '/settings', label: 'Settings', icon: Settings },
+      { href: '/eval', label: 'Audit & Eval', icon: BarChart3 },
+    ],
+  },
+];
+
+const MOBILE_TABS: NavLinkItem[] = [
+  { href: '/today', label: 'Today', icon: HeartHandshake },
+  { href: '/signals', label: 'Trends', icon: LineChart },
+  { href: '/alerts', label: 'Alerts', icon: BellRing },
+  { href: '/caregiver', label: 'Care', icon: ShieldCheck },
+  { href: '/settings', label: 'Settings', icon: Settings },
+];
+
+export function SentinelShell({
+  title,
+  subtitle,
+  isSynthetic = false,
+  rightSlot,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  isSynthetic?: boolean;
+  rightSlot?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const { data: session } = authClient.useSession();
+  const userRole = ((session?.user as { role?: Role } | undefined)?.role ?? 'patient') as Role;
+
+  const visibleGroups = NAV_GROUPS.filter((g) => {
+    if (!session?.user) {
+      return g.id === 'patient' || g.id === 'admin';
+    }
+    if (g.roles === 'all') return true;
+    return g.roles.includes(userRole);
+  });
+
+  function isActivePath(href: string) {
+    if (href === '/clinician' && pathname.startsWith('/clinician/report')) return false;
+    if (href === '/settings' && pathname.startsWith('/settings/consent')) return false;
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
+  return (
+    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)] pb-20 lg:pb-0 print:pb-0">
+      {/* Desktop Left Mint Rail Navigation */}
+      <aside
+        aria-label="Primary sidebar navigation"
+        className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col justify-between border-r border-[var(--border-subtle)] bg-[var(--bg-rail)] lg:flex print:hidden"
+      >
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
+          <Link
+            href="/"
+            className="flex shrink-0 items-center gap-3 rounded-2xl px-2 py-1.5 transition hover:bg-[var(--bg-elevated)]"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]">
+              <Activity className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="font-[family-name:var(--font-display)] text-base font-bold leading-tight text-[var(--text-primary)]">
+                Sachet · SENTINEL
+              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Early Care Monitor
+              </p>
+            </div>
+          </Link>
+
+          <nav aria-label="Role workspaces" className="mt-4 space-y-3.5">
+            {visibleGroups.map((group) => (
+              <div key={group.id}>
+                <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  {group.title}
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActivePath(item.href);
+                    return (
+                      <li key={`${group.id}-${item.href}-${item.label}`}>
+                        <Link
+                          href={item.href}
+                          aria-current={active ? 'page' : undefined}
+                          className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${
+                            active
+                              ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)] shadow-xs'
+                              : 'text-[var(--text-primary)] hover:bg-[var(--bg-mint-panel)]'
+                          }`}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{item.label}</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+        </div>
+
+        <div className="shrink-0 border-t border-[var(--border-subtle)] px-4 py-3 space-y-1">
+          <Link
+            href="/model-card"
+            className="flex min-h-10 items-center gap-2.5 rounded-xl px-3 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-mint-panel)] hover:text-[var(--text-primary)]"
+          >
+            <BookOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Model Card & Safety</span>
+          </Link>
+          <Link
+            href="/design"
+            className="flex min-h-10 items-center gap-2.5 rounded-xl px-3 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-mint-panel)] hover:text-[var(--text-primary)]"
+          >
+            <Palette className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Design Tokens</span>
+          </Link>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="lg:pl-64 print:pl-0">
+        <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/92 backdrop-blur-md print:hidden">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+              <Link
+                href="/"
+                aria-label="Sachet SENTINEL Home"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-3 text-sm font-semibold text-[var(--brand-primary-fg)] lg:hidden"
+              >
+                <Activity className="h-4 w-4" aria-hidden="true" />
+                <span>SENTINEL</span>
+              </Link>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-[family-name:var(--font-display)] text-lg font-bold leading-tight sm:text-xl">
+                    {title}
+                  </h1>
+                  {isSynthetic && <SyntheticBadge />}
+                </div>
+                {subtitle && (
+                  <p className="text-xs text-[var(--text-muted)]">{subtitle}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {rightSlot}
+              <Link
+                href="/alerts"
+                aria-label="Open alert notifications"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] text-[var(--text-primary)] transition hover:bg-[var(--bg-elevated)]"
+              >
+                <BellRing className="h-4 w-4" aria-hidden="true" />
+              </Link>
+              <Link
+                href="/auth"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-xs font-semibold text-[var(--text-primary)] transition hover:bg-[var(--bg-elevated)] sm:text-sm"
+              >
+                {session?.user ? (
+                  <>
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-primary)] text-[11px] font-bold text-[var(--brand-primary-fg)]">
+                      {session.user.name.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="max-w-32 truncate">{session.user.name}</span>
+                    <span className="hidden rounded-full bg-[var(--bg-mint-panel)] px-2 py-0.5 text-[11px] font-semibold capitalize text-[var(--brand-accent-text)] sm:inline">
+                      {userRole.replace('_', ' ')}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+                    <span>Sign In</span>
+                  </>
+                )}
+              </Link>
+              <ThemeToggle />
+            </div>
+          </div>
+        </header>
+
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
+      </div>
+
+      {/* Mobile Bottom Tab Bar */}
+      <nav
+        aria-label="Mobile quick navigation"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]/95 px-1 py-1.5 backdrop-blur-md lg:hidden print:hidden"
+      >
+        {MOBILE_TABS.map((tab) => {
+          const Icon = tab.icon;
+          const active = isActivePath(tab.href);
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              aria-current={active ? 'page' : undefined}
+              className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-semibold ${
+                active
+                  ? 'bg-[var(--bg-mint-panel)] text-[var(--brand-accent-text)]'
+                  : 'text-[var(--text-muted)]'
+              }`}
+            >
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">{tab.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}

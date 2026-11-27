@@ -1,15 +1,19 @@
 @import "tailwindcss";
 
 :root {
-  --bg-base: #f6f9fc;
+  --bg-base: #f4f8f7;
   --bg-surface: #ffffff;
-  --bg-elevated: #eff5f8;
-  --border-subtle: #cbd5e1;
-  --text-primary: #0f172a;
-  --text-muted: #475569;
+  --bg-rail: #e8f3f0;
+  --bg-mint-panel: #e1f2ec;
+  --bg-elevated: #eff6f4;
+  --border-subtle: #d2e2dd;
+  --text-primary: #0f2928;
+  --text-muted: #425e5b;
   --brand-primary: #0f766e;
   --brand-primary-fg: #ffffff;
-  --brand-accent-text: #115e59;
+  --brand-rail-active: #0f3d4c;
+  --brand-rail-active-fg: #ffffff;
+  --brand-accent-text: #0f5d56;
 
   --status-stable: #047857;
   --status-stable-bg: #ecfdf5;
@@ -25,17 +29,22 @@
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 16px;
+  --card-shadow: 0 1px 3px rgba(15, 61, 76, 0.04), 0 8px 20px -12px rgba(15, 61, 76, 0.08);
 }
 
 .dark {
   --bg-base: #0b1117;
   --bg-surface: #121b24;
+  --bg-rail: #0f1922;
+  --bg-mint-panel: #13252a;
   --bg-elevated: #1a2633;
   --border-subtle: #263545;
   --text-primary: #f8fafc;
   --text-muted: #94a3b8;
   --brand-primary: #2dd4bf;
   --brand-primary-fg: #042f2e;
+  --brand-rail-active: #2dd4bf;
+  --brand-rail-active-fg: #042f2e;
   --brand-accent-text: #5eead4;
 
   --status-stable: #34d399;
@@ -48,6 +57,7 @@
   --status-urgent-bg: #3b0d0d;
   --status-synthetic: #38bdf8;
   --status-synthetic-bg: #0c2b3e;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
 }
 
 @theme inline {
@@ -67,6 +77,19 @@ body {
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+.mint-bento {
+  background-color: var(--bg-mint-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 24px;
+}
+
+.clinical-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
 }
 
 /* Focus rings strictly visible for WCAG 2.2 AA/AAA keyboard accessibility */

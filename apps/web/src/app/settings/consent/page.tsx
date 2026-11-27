@@ -1,18 +1,16 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
   CheckCircle2,
-  Lock,
   ShieldAlert,
   ShieldCheck,
   UserPlus,
   XCircle,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 interface ConsentGrantRow {
   id: string;
@@ -145,40 +143,16 @@ export default function ConsentLedgerPage() {
     consentQuery.error?.message === '401' || auditQuery.error?.message === '401';
 
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              <span>Home</span>
-            </Link>
-            <h1 className="font-[family-name:var(--font-display)] text-xl font-semibold">
-              Care Circle, Consent Ledger & Audit Chain
-            </h1>
-          </div>
-          <ThemeToggle />
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+    <SentinelShell
+      title="Care Circle, Consent Ledger & Audit Chain"
+      subtitle="Granular Row-Level Security consent scopes and SHA-256 append-only audit proof"
+    >
+      <main className="space-y-6">
         {isUnauth ? (
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-            <Lock className="mx-auto h-8 w-8 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="mt-3 text-xl font-semibold">Authentication required</h2>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
-              Sign in as a patient, caregiver, or clinician to view or manage DPDP consent grants.
-            </p>
-            <Link
-              href="/auth"
-              className="mt-5 inline-flex min-h-12 items-center rounded-xl bg-[var(--brand-primary)] px-5 font-semibold text-[var(--brand-primary-fg)]"
-            >
-              Go to Sign In
-            </Link>
-          </div>
+          <SignedOutGate
+            heading="Authentication required"
+            description="Sign in as a patient, caregiver, or clinician to view or manage DPDP consent grants."
+          />
         ) : (
           <>
             {feedback && (
@@ -378,6 +352,6 @@ export default function ConsentLedgerPage() {
           </>
         )}
       </main>
-    </div>
+    </SentinelShell>
   );
 }

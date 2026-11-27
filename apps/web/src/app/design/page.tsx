@@ -1,13 +1,11 @@
-import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   Eye,
   FlaskConical,
   Siren,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 const STATUS_TOKENS = [
   {
@@ -49,26 +47,13 @@ const STATUS_TOKENS = [
 
 export default function DesignSystemPage() {
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
-          <Link
-            href="/"
-            className="inline-flex min-h-11 items-center gap-2 text-sm font-medium hover:underline"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            <span>Back to Home</span>
-          </Link>
-          <ThemeToggle />
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl space-y-8 px-4 py-10">
+    <SentinelShell
+      title="Sachet · SENTINEL Design Contract"
+      subtitle="Clinical mint-and-white palette, Atkinson Hyperlegible & WCAG 2.2 AA touch rules"
+    >
+      <main className="mx-auto max-w-5xl space-y-8">
         <section>
-          <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold">
-            Sachet · SENTINEL Design Contract
-          </h1>
-          <p className="mt-2 max-w-2xl text-base text-[var(--text-muted)]">
+          <p className="max-w-2xl text-base text-[var(--text-muted)]">
             Grounded in WCAG 2.2 AA contrast, Atkinson Hyperlegible body text, Fraunces editorial
             display headings, and JetBrains Mono tabular telemetry.
           </p>
@@ -123,6 +108,6 @@ export default function DesignSystemPage() {
           </div>
         </section>
       </main>
-    </div>
+    </SentinelShell>
   );
 }

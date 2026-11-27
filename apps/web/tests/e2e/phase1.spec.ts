@@ -40,8 +40,15 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'design-dark.png'), fullPage: true });
     await page.getByRole('button', { name: /Switch to light theme/i }).click();
 
-    // Quick Open 1-click sign-in + direct workspace routing on /auth
+    // Quick Open 1-click sign-in + direct workspace routing + Google OAuth card on /auth
     await page.goto('/auth');
+    const providersRes = await page.request.get('/api/v1/auth/providers');
+    expect(providersRes.status()).toBe(200);
+    const googleBtn = page.getByTestId('google-signin-button');
+    await expect(googleBtn).toBeVisible();
+    await googleBtn.click();
+    await expect(page.getByTestId('google-setup-notice')).toContainText('GOOGLE_CLIENT_ID');
+
     const authAxe = await new AxeBuilder({ page }).analyze();
     expect(authAxe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')).toEqual([]);
     await expect(page.getByRole('button', { name: 'Quick Open /today' })).toBeVisible();

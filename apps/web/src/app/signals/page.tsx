@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarOff, LineChart, Lock, Trash2 } from 'lucide-react';
+import { CalendarOff, LineChart, Trash2 } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
-import { SentinelNav } from '@/components/sentinel-nav';
+import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 interface SeriesData {
   patientId: string;
@@ -108,21 +108,14 @@ export default function SignalExplorerPage() {
   const hasSynthetic = (seriesQuery.data?.recentRawSamples ?? []).some((s) => s.isSynthetic);
 
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <SentinelNav title="Signal Explorer & Quarantine" isSynthetic={hasSynthetic} />
-
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
+    <SentinelShell
+      title="Health Trends & Quarantine"
+      subtitle="30-day longitudinal telemetry, personal normal corridors & contamination exclusions"
+      isSynthetic={hasSynthetic}
+    >
+      <main className="space-y-6">
         {isUnauth ? (
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-            <Lock className="mx-auto h-8 w-8 text-[var(--brand-primary)]" aria-hidden="true" />
-            <h2 className="mt-3 text-xl font-semibold">Sign in to explore raw telemetry</h2>
-            <Link
-              href="/auth"
-              className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-[var(--brand-primary)] px-5 font-semibold text-[var(--brand-primary-fg)]"
-            >
-              Sign In
-            </Link>
-          </div>
+          <SignedOutGate heading="Sign in to explore raw telemetry" />
         ) : (
           <>
             {msg && (
@@ -152,6 +145,8 @@ export default function SignalExplorerPage() {
                   <option value="respiratory_rate">respiratory_rate</option>
                   <option value="skin_temp_deviation">skin_temp_deviation</option>
                   <option value="steps">steps</option>
+                  <option value="sleep_duration_min">sleep_duration_min</option>
+                  <option value="sleep_efficiency">sleep_efficiency</option>
                 </select>
               </div>
 
@@ -268,6 +263,6 @@ export default function SignalExplorerPage() {
           </>
         )}
       </main>
-    </div>
+    </SentinelShell>
   );
 }

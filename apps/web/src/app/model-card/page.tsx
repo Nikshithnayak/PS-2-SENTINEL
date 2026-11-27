@@ -1,13 +1,14 @@
 import Link from 'next/link';
 import { BookOpen, ShieldAlert, Stethoscope } from 'lucide-react';
-import { SentinelNav } from '@/components/sentinel-nav';
+import { SentinelShell } from '@/components/sentinel-shell';
 
 export default function ModelCardPage() {
   return (
-    <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <SentinelNav title="Model Card & Safety Disclosures" />
-
-      <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
+    <SentinelShell
+      title="Model Card & Safety Disclosures"
+      subtitle="Transparent limitations, PPG equity disclosures & Partial NEWS2 scope"
+    >
+      <main className="mx-auto max-w-4xl space-y-6">
         <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
           <div className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-[var(--brand-primary)]" aria-hidden="true" />
@@ -99,6 +100,6 @@ export default function ModelCardPage() {
           </div>
         </section>
       </main>
-    </div>
+    </SentinelShell>
   );
 }

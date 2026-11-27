@@ -7,23 +7,27 @@ import {
   BarChart3,
   BellRing,
   Database,
-  FlaskConical,
+  FileText,
   HeartHandshake,
   LineChart,
   Settings,
   ShieldCheck,
   Stethoscope,
+  Users,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { SyntheticBadge } from '@/components/health/status-badge';
 
 const NAV_LINKS = [
-  { href: '/today', label: 'Today (Elder)', icon: HeartHandshake },
+  { href: '/today', label: 'Today', icon: HeartHandshake },
+  { href: '/signals', label: 'Trends', icon: LineChart },
+  { href: '/alerts', label: 'Alerts', icon: BellRing },
   { href: '/caregiver', label: 'Caregiver', icon: ShieldCheck },
   { href: '/clinician', label: 'Clinician', icon: Stethoscope },
-  { href: '/signals', label: 'Signals', icon: LineChart },
-  { href: '/alerts', label: 'Alerts', icon: BellRing },
-  { href: '/eval', label: 'Eval Lab', icon: BarChart3 },
+  { href: '/clinician/report', label: 'Reports', icon: FileText },
   { href: '/ingest', label: 'Import', icon: Database },
+  { href: '/settings/consent', label: 'Consent', icon: Users },
+  { href: '/eval', label: 'Audit & Eval', icon: BarChart3 },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -39,7 +43,7 @@ export function SentinelNav({
   const pathname = usePathname();
 
   return (
-    <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/85 backdrop-blur-md">
+    <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/92 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
         <div className="flex min-w-0 flex-wrap items-center gap-2.5">
           <Link
@@ -54,28 +58,25 @@ export function SentinelNav({
               {title}
             </h1>
           )}
-          {isSynthetic && (
-            <span
-              data-testid="global-synthetic-badge"
-              className="inline-flex items-center gap-1 rounded-full bg-[var(--status-synthetic-bg)] px-2.5 py-1 text-xs font-bold text-[var(--status-synthetic)]"
-            >
-              <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
-              SYNTHETIC
-            </span>
-          )}
+          {isSynthetic && <SyntheticBadge />}
         </div>
 
         <nav aria-label="Workspace views" className="flex flex-wrap items-center gap-1.5">
           {NAV_LINKS.map((item) => {
             const Icon = item.icon;
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const active =
+              item.href === '/clinician'
+                ? pathname === '/clinician'
+                : item.href === '/settings'
+                  ? pathname === '/settings'
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition sm:text-sm ${
                   active
-                    ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
+                    ? 'border-[var(--brand-rail-active)] bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)]'
                     : 'border-[var(--border-subtle)] hover:bg-[var(--bg-elevated)]'
                 }`}
               >

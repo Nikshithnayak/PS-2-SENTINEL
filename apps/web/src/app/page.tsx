@@ -5,9 +5,11 @@ import {
   BellRing,
   CheckCircle2,
   Database,
+  HeartPulse,
   Lock,
   Palette,
   ShieldCheck,
+  Stethoscope,
   Users,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -22,166 +24,185 @@ export default async function HomePage() {
   const session = await getSessionContext();
 
   let dbConnected = false;
-  let profileCount = 0;
+  let auditCount = 0;
   try {
     const res = await getPool().query('SELECT count(*)::int AS cnt FROM audit_logs');
     dbConnected = true;
-    profileCount = Number(res.rows[0]?.cnt ?? 0);
+    auditCount = Number(res.rows[0]?.cnt ?? 0);
   } catch {
     dbConnected = false;
   }
 
   return (
     <div className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/92 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]">
               <Activity className="h-5 w-5" aria-hidden="true" />
             </span>
             <div>
-              <p className="font-[family-name:var(--font-display)] text-lg font-semibold leading-tight">
+              <p className="font-[family-name:var(--font-display)] text-lg font-bold leading-tight">
                 Sachet · SENTINEL
               </p>
-              <p className="text-xs text-[var(--text-muted)]">
+              <p className="text-xs font-medium text-[var(--text-muted)]">
                 Wearable Early-Awareness Platform
               </p>
             </div>
           </div>
-          <nav aria-label="Primary navigation" className="flex flex-wrap items-center gap-2 sm:gap-3">
+
+          <nav aria-label="Primary navigation" className="flex flex-wrap items-center gap-2">
             <Link
               href="/today"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
             >
-              <span>Today (Elder)</span>
+              <HeartPulse className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+              <span>Today</span>
             </Link>
             <Link
               href="/caregiver"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
             >
               <span>Caregiver</span>
             </Link>
             <Link
               href="/clinician"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
             >
+              <Stethoscope className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
               <span>Clinician</span>
             </Link>
             <Link
               href="/alerts"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
             >
-              <BellRing className="h-4 w-4" aria-hidden="true" />
+              <BellRing className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
               <span>Alerts</span>
             </Link>
             <Link
               href="/ingest"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
             >
-              <Database className="h-4 w-4" aria-hidden="true" />
-              <span>Data & Import</span>
+              <Database className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+              <span>Import</span>
             </Link>
             <Link
               href="/design"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
             >
-              <Palette className="h-4 w-4" aria-hidden="true" />
-              <span>Design Tokens</span>
+              <Palette className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+              <span>Design</span>
             </Link>
             <Link
-              href="/settings/consent"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium hover:bg-[var(--bg-elevated)]"
+              href="/auth"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
             >
-              <Users className="h-4 w-4" aria-hidden="true" />
-              <span>Consent Ledger</span>
+              <span>{session ? session.name : 'Sign In'}</span>
             </Link>
             <ThemeToggle />
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+      <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 sm:py-10">
         <CalmFade>
-          <section className="grid items-center gap-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 sm:p-10 lg:grid-cols-[1.25fr_1fr]">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[var(--status-stable-bg)] px-3 py-1 text-xs font-semibold text-[var(--status-stable)]">
-                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Screening & Early Awareness · Non-Diagnostic</span>
+          <section className="mint-bento p-5 sm:p-8">
+            <div className="clinical-card grid items-center gap-8 p-6 sm:p-10 lg:grid-cols-[1.25fr_1fr]">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-[var(--status-stable-bg)] px-3.5 py-1 text-xs font-bold text-[var(--status-stable)]">
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Screening & Early Awareness · Non-Diagnostic</span>
+                </div>
+
+                <h1 className="mt-4 max-w-2xl font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight sm:text-4xl">
+                  Personal physiological baselines that notice changes before crisis.
+                </h1>
+                <p className="mt-4 max-w-2xl text-base text-[var(--text-muted)]">
+                  Designed for elderly home care and Nitte Pharma Innovation Centre Problem S2.
+                  Calibrated to each individual&apos;s own normal with PostgreSQL Row-Level Security,
+                  DPDP-aligned consent controls, and calm Kannada, Hindi, and English care workflows.
+                </p>
+
+                <div className="mt-7 flex flex-wrap items-center gap-3">
+                  <Link
+                    href="/auth"
+                    className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-6 text-base font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
+                  >
+                    <span>
+                      {session
+                        ? `Signed in as ${session.name} (${session.role})`
+                        : 'Sign In / Switch Role'}
+                    </span>
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                  <Link
+                    href="/settings/consent"
+                    className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-5 text-base font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-mint-panel)]"
+                  >
+                    <ShieldCheck className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+                    <span>Open Consent & Audit Ledger</span>
+                  </Link>
+                </div>
               </div>
 
-              <h1 className="mt-4 max-w-3xl font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Personal physiological baselines that spot deterioration days before crisis.
-              </h1>
-              <p className="mt-4 max-w-2xl text-base text-[var(--text-muted)]">
-                Built for elderly home care and Nitte Pharma Innovation Centre Problem S2.
-                Calibrated to each individual&apos;s own normal with cryptographic PHI protection,
-                DPDP-aligned consent ledgers, and calm multilingual care workflows.
-              </p>
-
-              <div className="mt-8 flex flex-wrap items-center gap-4">
-                <Link
-                  href="/auth"
-                  className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[var(--brand-primary)] px-5 py-3 text-base font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
-                >
-                  <span>
-                    {session ? `Signed in as ${session.name} (${session.role})` : 'Sign In / Switch Role'}
-                  </span>
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </Link>
-                <Link
-                  href="/settings/consent"
-                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-5 py-3 text-base font-medium text-[var(--text-primary)] hover:opacity-90"
-                >
-                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                  <span>Open Consent & Audit Ledger</span>
-                </Link>
-              </div>
+              <PulseHeroVisual />
             </div>
-
-            <PulseHeroVisual />
           </section>
         </CalmFade>
 
         <section
           aria-label="Live System Verification"
-          className="mt-8 grid gap-4 sm:grid-cols-3"
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
         >
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
+          <div className="clinical-card p-5">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
               <Database className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
               <span>PostgreSQL & RLS</span>
             </div>
-            <p className="mt-2 font-[family-name:var(--font-mono)] text-xl font-semibold tabular-nums">
+            <p className="mt-2 font-[family-name:var(--font-mono)] text-xl font-bold tabular-nums">
               {dbConnected ? 'Connected' : 'Unavailable'}
             </p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
               Partitioned vitals + FORCE RLS active
             </p>
           </div>
 
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
+          <div className="clinical-card p-5">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
               <Lock className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
-              <span>Hash-Chained Audit Ledger</span>
+              <span>Hash-Chained Audit</span>
             </div>
-            <p className="mt-2 font-[family-name:var(--font-mono)] text-xl font-semibold tabular-nums">
-              {profileCount} entries
+            <p className="mt-2 font-[family-name:var(--font-mono)] text-xl font-bold tabular-nums">
+              {auditCount} entries
             </p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
               Append-only SHA-256 tamper protection
             </p>
           </div>
 
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
-              <ShieldCheck className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+          <div className="clinical-card p-5">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+              <Users className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
               <span>Active Session</span>
             </div>
-            <p className="mt-2 text-xl font-semibold">
-              {session ? session.role : 'Guest (Sign in)'}
+            <p className="mt-2 text-xl font-bold capitalize">
+              {session ? session.role.replace('_', ' ') : 'Guest (Isolated)'}
             </p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              {session ? session.email : 'RBAC session cookie protected'}
+            <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+              {session ? session.email : 'No PHI exposed before authentication'}
+            </p>
+          </div>
+
+          <div className="clinical-card p-5">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+              <ShieldCheck className="h-4 w-4 text-[var(--brand-primary)]" aria-hidden="true" />
+              <span>Emergency Routing</span>
+            </div>
+            <p className="mt-2 font-[family-name:var(--font-mono)] text-xl font-bold tabular-nums">
+              112 / 108
+            </p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Urgent escalation + hospital locator ready
             </p>
           </div>
         </section>
