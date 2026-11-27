@@ -345,7 +345,7 @@ export async function runAndPersistEvaluation(params: {
             }
           : null,
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(20_000),
     });
     if (resp.ok) {
       const py = (await resp.json()) as Omit<
@@ -364,8 +364,12 @@ export async function runAndPersistEvaluation(params: {
         explanationKn: localized.kn,
         explanationHi: localized.hi,
       };
+    } else {
+      const errText = await resp.text().catch(() => '');
+      console.warn(`[sentinel-engine] Python /v1/score/evaluate returned HTTP ${resp.status}: ${errText.slice(0, 300)}`);
     }
-  } catch {
+  } catch (err) {
+    console.warn('[sentinel-engine] Python evaluation fetch failed, using TS fallback:', err);
     evaluated = null;
   }
 
@@ -377,8 +381,15 @@ export async function runAndPersistEvaluation(params: {
     });
   }
 
-  // Persist baseline states, risk assessment, and immutable detector decision log
-  const assessedDate = new Date(evaluated.assessedAt);
+  // Persist baseline states, risk assessment, and immutable detector decision log.
+  // Use evaluation execution time when the engine reports a top-of-hour bucket timestamp
+  // so newer evaluations never sort behind earlier within-the-hour fallback assessments.
+  const parsedAssessed = new Date(evaluated.assessedAt);
+  const nowDate = new Date();
+  const assessedDate =
+    Number.isNaN(parsedAssessed.getTime()) || parsedAssessed.getTime() < nowDate.getTime()
+      ? nowDate
+      : parsedAssessed;
   const assessmentId = await withSystemDb(async (tx) => {
     for (const mb of evaluated.baseline.metrics.slice(0, 16)) {
       const existing = await tx

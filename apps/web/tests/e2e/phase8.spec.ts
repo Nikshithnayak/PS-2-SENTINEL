@@ -12,7 +12,7 @@ test.describe('Phase 8 Evaluation Lab, Model Card & Clinical Exports E2E', () =>
   test('runs live causal ablation benchmark on /eval, inspects /model-card, /clinician/report, FHIR & cohort APIs', async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
     page.on('console', (msg) => {
@@ -30,7 +30,7 @@ test.describe('Phase 8 Evaluation Lab, Model Card & Clinical Exports E2E', () =>
     await expect(page.getByText(/Public Wearable Dataset Format Adapters/i)).toBeVisible();
     await page.getByRole('button', { name: /Run Live Ablation Benchmark/i }).click();
     await expect(page.getByText('Ablation Comparison (Measured Live)')).toBeVisible({
-      timeout: 45_000,
+      timeout: 75_000,
     });
     await expect(page.getByRole('cell', { name: 'L1_L2_L3_full' })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'copd_exacerbation' })).toBeVisible();

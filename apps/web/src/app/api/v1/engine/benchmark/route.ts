@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(parsed.data),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(75_000),
     });
     if (!resp.ok) {
       return NextResponse.json({ error: 'Python engine benchmark failed' }, { status: 502 });

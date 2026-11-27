@@ -15,6 +15,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { WatchSyncHub } from '@/components/ingest/watch-sync-hub';
 import { SentinelShell } from '@/components/sentinel-shell';
 
 interface QualityStatusResponse {
@@ -186,11 +187,11 @@ export default function IngestPage() {
           mapping:
             importFormat === 'csv'
               ? {
-                  timestampColumn: tsCol,
-                  metricColumn: metricCol,
-                  valueColumn: valCol,
-                  unitColumn: unitCol,
-                }
+                timestampColumn: tsCol,
+                metricColumn: metricCol,
+                valueColumn: valCol,
+                unitColumn: unitCol,
+              }
               : undefined,
         }),
       });
@@ -336,7 +337,7 @@ export default function IngestPage() {
                 </div>
                 <p className="mt-2 font-[family-name:var(--font-mono)] text-2xl font-semibold tabular-nums">
                   {qualityQuery.data?.silence.hoursSilent !== null &&
-                  qualityQuery.data?.silence.hoursSilent !== undefined
+                    qualityQuery.data?.silence.hoursSilent !== undefined
                     ? `${qualityQuery.data.silence.hoursSilent}h`
                     : 'No Data'}
                 </p>
@@ -386,6 +387,15 @@ export default function IngestPage() {
                 </p>
               </div>
             </section>
+
+            <WatchSyncHub
+              patientId={qualityQuery.data?.patientId}
+              adapters={qualityQuery.data?.adapters ?? []}
+              onSyncComplete={() => {
+                void qc.invalidateQueries({ queryKey: ['quality-status'] });
+                void qc.invalidateQueries({ queryKey: ['patient-dashboard'] });
+              }}
+            />
 
             <div className="grid gap-6 lg:grid-cols-2">
               {/* Apple Health XML & Synthetic Generator */}

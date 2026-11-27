@@ -27,9 +27,45 @@ test.describe('Phase 2 Data Ingestion & Quality Pipeline E2E', () => {
     await page.goto('/ingest');
     await expect(page.getByText('Wearable Data Ingestion & Quality Pipeline')).toBeVisible();
 
-    // Generate device API key
+    // Verify Universal Watch Sync Hub & generate device API key
+    await expect(
+      page.getByText('Connect Any Smartwatch Directly or via Companion Webhook'),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Apple Watch (iOS)' }).click();
+    await expect(page.getByText(/Health Auto Export/i).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Watch JSON / curl' }).click();
+
     await page.getByRole('button', { name: 'Generate Key' }).click();
-    await expect(page.getByText(/Copy now \(shown once\):/)).toBeVisible();
+    const keyNotice = page.getByText(/Copy now \(shown once\):/);
+    await expect(keyNotice).toBeVisible();
+    const keyNoticeText = (await keyNotice.innerText()).trim();
+    const apiKeyMatch = keyNoticeText.match(/snt_live_[A-Za-z0-9_-]+/);
+    expect(apiKeyMatch?.[0]).toBeTruthy();
+
+    // Sync real smartwatch JSON payload via universal watch webhook using issued x-api-key
+    const watchWebhookRes = await page.request.post('/api/v1/ingest/watch', {
+      headers: { 'x-api-key': apiKeyMatch![0]! },
+      data: {
+        deviceModel: 'Samsung Galaxy Watch 7',
+        heartRate: 74,
+        spo2: 98,
+        steps: 5120,
+        evaluate: false,
+      },
+    });
+    expect(watchWebhookRes.status()).toBe(201);
+    const watchWebhookJson = (await watchWebhookRes.json()) as {
+      recordsAccepted: number;
+      isSynthetic: boolean;
+    };
+    expect(watchWebhookJson.recordsAccepted).toBe(3);
+    expect(watchWebhookJson.isSynthetic).toBe(false);
+
+    // Clicking unconfigured cloud adapter explains setup clearly with zero console errors
+    await page.getByRole('button', { name: 'Sync Open Wearables' }).click();
+    await expect(
+      page.getByText(/Push live watch readings with Bluetooth or the Webhook tab/i),
+    ).toBeVisible();
 
     // Upload real Apple Health XML fixture
     const fixturePath = resolve(EVIDENCE_DIR, 'sample-export.xml');
