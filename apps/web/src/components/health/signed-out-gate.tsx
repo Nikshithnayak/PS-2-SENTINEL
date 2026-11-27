@@ -14,6 +14,9 @@ export function SignedOutGate({
   signInHref?: string;
   signInLabel?: string;
 }) {
+  const altHref = signInHref === '/auth' ? '/caregiver/login' : '/auth';
+  const altLabel = signInHref === '/auth' ? 'Caregiver / Clinician Login' : 'Patient Portal';
+
   return (
     <div className="clinical-card mx-auto max-w-xl p-8 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--bg-mint-panel)] text-[var(--brand-primary)]">
@@ -30,10 +33,10 @@ export function SignedOutGate({
           <span>{signInLabel}</span>
         </Link>
         <Link
-          href="/"
+          href={altHref}
           className="inline-flex min-h-12 items-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-5 text-sm font-semibold hover:bg-[var(--bg-elevated)]"
         >
-          Public Overview
+          {altLabel}
         </Link>
       </div>
     </div>

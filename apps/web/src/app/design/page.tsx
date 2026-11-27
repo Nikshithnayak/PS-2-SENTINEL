@@ -6,6 +6,7 @@ import {
   Siren,
 } from 'lucide-react';
 import { SentinelShell } from '@/components/sentinel-shell';
+import { PulseHeroVisual } from '@/components/visuals/pulse-hero';
 
 const STATUS_TOKENS = [
   {
@@ -106,6 +107,11 @@ export default function DesignSystemPage() {
               </button>
             </div>
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
+          <h2 className="mb-3 text-lg font-semibold">Baseline Rhythm Visual (Reduced-Motion Safe)</h2>
+          <PulseHeroVisual />
         </section>
       </main>
     </SentinelShell>

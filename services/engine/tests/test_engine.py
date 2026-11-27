@@ -164,7 +164,7 @@ def test_benchmark_ablation_and_dataset_adapters_and_api() -> None:
         "/v1/score/evaluate",
         json={
             "patientId": "api-test",
-            "samples": generate_scenario("early_infection", seed=42, total_days=16).samples[-240:],
+            "samples": generate_scenario("early_infection", seed=42, total_days=16).samples,
             "conditions": ["general_frailty"],
         },
     )

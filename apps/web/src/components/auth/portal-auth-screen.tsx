@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import {
   Activity,
   AlertCircle,
-  ArrowLeft,
   Building2,
   CheckCircle2,
   HeartHandshake,
@@ -295,19 +294,26 @@ export function PortalAuthScreen({ portal }: { portal: PortalKind }) {
       <header className={meta.headerClass}>
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4">
           <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className={`inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm font-semibold ${
+            <span
+              className={`flex h-10 w-10 items-center justify-center rounded-xl ${
                 portal === 'clinician'
-                  ? 'border-white/25 bg-white/10 text-white hover:bg-white/20'
-                  : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+                  ? 'bg-white/15 text-white'
+                  : 'bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
               }`}
             >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              <span>Back to Home</span>
-            </Link>
-            <div className="hidden sm:block">
-              <p className="text-sm font-bold leading-tight">{meta.headerTitle}</p>
+              <Activity className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-[family-name:var(--font-display)] text-base font-bold leading-tight">
+                Sachet · SENTINEL
+              </p>
+              <p
+                className={`text-xs ${
+                  portal === 'clinician' ? 'text-white/75' : 'text-[var(--text-muted)]'
+                }`}
+              >
+                {meta.headerTitle}
+              </p>
             </div>
           </div>
 

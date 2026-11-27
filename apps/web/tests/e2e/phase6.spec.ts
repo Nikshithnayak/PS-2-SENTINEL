@@ -21,8 +21,8 @@ test.describe('Phase 6 Signature Visuals, Reduced Motion, i18n & PWA Verificatio
     });
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/');
-    await expect(page.getByText(/Personal physiological baselines/i)).toBeVisible();
+    await page.goto('/design');
+    await expect(page.getByText(/Clinical mint-and-white palette/i)).toBeVisible();
 
     const webglCanvases = await page.locator('canvas').count();
     expect(webglCanvases).toBeLessThanOrEqual(1);
@@ -45,7 +45,7 @@ test.describe('Phase 6 Signature Visuals, Reduced Motion, i18n & PWA Verificatio
 
     const reducedCtx = await browser.newContext({ reducedMotion: 'reduce' });
     const reducedPage = await reducedCtx.newPage();
-    await reducedPage.goto('http://127.0.0.1:3100/');
+    await reducedPage.goto('http://127.0.0.1:3100/design');
     await expect(reducedPage.getByTestId('pulse-static-fallback')).toBeVisible();
     await reducedPage.screenshot({
       path: resolve(EVIDENCE_DIR, 'home-reduced-motion.png'),

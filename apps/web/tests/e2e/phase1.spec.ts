@@ -25,11 +25,11 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
     const caregiverEmail = `caregiver-${suffix}@example.com`;
     const patientEmail = `patient-${suffix}@example.com`;
 
-    // Desktop Home (must contain zero fake sample previews or demo instructions)
+    // Root entry redirects directly to portal auth without promotional landing bloat or synthetic data
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    await expect(page.getByText('Sachet · SENTINEL')).toBeVisible();
-    await expect(page.getByText('Connected')).toBeVisible();
+    await page.waitForURL('**/auth*');
+    await expect(page.getByText('Sachet · SENTINEL', { exact: true })).toBeVisible();
     await expect(page.getByText('SYNTHETIC PREVIEW')).toHaveCount(0);
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'home-desktop-light.png'), fullPage: true });
 
