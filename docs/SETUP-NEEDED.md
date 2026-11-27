@@ -5,7 +5,7 @@ SENTINEL runs **completely out-of-the-box locally** using local embedded Postgre
 To enable cloud hosting, Google Sign-In, remote push/email alerts, or cloud wearable bridges, connect any of these **free-tier (free-for-dev)** providers in `.env.local`:
 
 | Variable(s) | Free-for-Dev Service | Purpose | How to Provision |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `DATABASE_URL` | **Supabase** (Free 500 MB) or Neon | Managed PostgreSQL + RLS instead of local embedded PG | Create project at `supabase.com` → Connect → URI (`postgres://...`) |
 | `BETTER_AUTH_SECRET`, `PHI_ENCRYPTION_KEY` | Local CSPRNG | Session signing & AES-256-GCM field encryption | Auto-generated cleanly into `.env.local` (64 hex chars) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | **Google Cloud Console** (Free) | Real **Continue with Google** Sign-In + 1-click Google Fit OAuth connect | Create Web OAuth 2.0 Client; Redirect URIs: `http://localhost:3000/api/auth/callback/google` and `http://localhost:3000/api/v1/connectors/google/callback` (plus production URLs) |
@@ -15,5 +15,7 @@ To enable cloud hosting, Google Sign-In, remote push/email alerts, or cloud wear
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_DEFAULT_CHAT_ID` | **Telegram Bot API** (Free) | Instant caregiver Telegram alerts with `OK` / `CALL ME` / `SNOOZE` buttons | Message `@BotFather` on Telegram → `/newbot` |
 | `OPEN_WEARABLES_URL`, `OPEN_WEARABLES_API_KEY` | Self-hosted **Open Wearables** | Sync Garmin, Polar, Oura, Whoop, Suunto clouds | Run `docker compose --profile open-wearables up` |
 | `GOOGLE_HEALTH_CLIENT_ID`, `GOOGLE_HEALTH_CLIENT_SECRET` | **Google Health API** | Sync Android Health Connect / Wear OS via Google cloud | Register project + Google Health OAuth scopes |
-| `LLM_PHRASING_API_KEY`, `LLM_PHRASING_BASE_URL` | **Groq** / **Google AI Studio Gemini** (Free tier) | Optional PII-stripped calm alert phrasing | Create free API key at `console.groq.com` or `aistudio.google.com` |
+| `GROQ_API_KEY` | **Groq** (Free Tier: 2,000 req/day) | Sub-second Wispr-Flow speech transcription (`whisper-large-v3-turbo`) + natural conversational chat (`openai/gpt-oss-20b`); **on-device browser Whisper (`Xenova/whisper-tiny`) works offline with zero key** | Create free API key at `console.groq.com` |
+| `OLLAMA_BASE_URL` | Self-hosted **Ollama** (Free, local) | Private offline open-source LLM voice conversation (`llama3.2` / `qwen2.5`) | Run Ollama locally (`http://127.0.0.1:11434/v1`) |
+| `LLM_PHRASING_API_KEY`, `LLM_PHRASING_BASE_URL` | **Groq** / **Google AI Studio Gemini** (Free tier) | Optional PII-stripped calm alert phrasing & conversational companion | Create free API key at `console.groq.com` or `aistudio.google.com` |
 | `SENTRY_DSN` | **Sentry** / **GlitchTip** (Free tier) | Error tracking | Create Next.js DSN on `sentry.io` |

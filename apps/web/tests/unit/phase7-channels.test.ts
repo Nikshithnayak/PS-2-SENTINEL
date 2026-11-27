@@ -7,6 +7,7 @@ import { SEED_IDS, seedDatabase } from '@/db/seed';
 import { parseCaregiverReplyCommand } from '@/lib/alerts/reply-parser';
 import { lookupRxNormDrug } from '@/lib/meds/rxnorm';
 import { analyzeVoiceCheckin } from '@/lib/voice/parser';
+import { cleanSpokenTranscript } from '@/lib/voice/transcript-cleaner';
 
 let pgHandle: LocalPgHandle;
 
@@ -52,6 +53,23 @@ describe('Phase 7 Voice Check-In Parser, Caregiver Reply Commands & RxNorm Meds'
     expect(customRes.intent).toBe('general_conversation');
     expect(customRes.shouldLogCheckin).toBe(false);
     expect(customRes.replyText).toContain('The weather is very humid today');
+
+    const followUpRes = analyzeVoiceCheckin('Yes', 'en', '112', {
+      patientFirstName: 'Mohan',
+      history: [
+        {
+          role: 'assistant',
+          text: 'Could you share more or let me know if you would like me to alert your caregiver?',
+        },
+      ],
+    });
+    expect(followUpRes.shouldLogCheckin).toBe(true);
+    expect(followUpRes.symptoms).toContain('caregiver_callback_requested');
+
+    expect(cleanSpokenTranscript('um I I feel dizzy and uh my bee pee is high')).toBe(
+      'I feel dizzy and my BP is high.',
+    );
+    expect(cleanSpokenTranscript('how is my s p o two today')).toBe('How is my SpO2 today?');
 
     const okRes = analyzeVoiceCheckin('I am fine today', 'en');
     expect(okRes.severity).toBe('none');

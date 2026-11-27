@@ -463,6 +463,55 @@ export function analyzeVoiceCheckin(
     };
   }
 
+  // 6.5 Multi-turn follow-up continuity using conversation history
+  const lastAssistant = [...(context?.history ?? [])]
+    .reverse()
+    .find((h) => h.role === 'assistant');
+  const notifyCaregiverRequested =
+    /\b(yes|yeah|yep|please|sure|ok|okay)\b.*\b(notify|tell|alert|ping|caregiver|family|call)\b/i.test(
+      clean,
+    ) ||
+    (/^(yes|yeah|yep|please\s*do|sure)$/i.test(clean) &&
+      Boolean(lastAssistant?.text.match(/notify|ping|alert your caregiver/i)));
+
+  if (notifyCaregiverRequested) {
+    const replies = {
+      en: `Done${nameTag} — I have logged your request and notified your care circle view so your caregiver can check in with you.`,
+      kn: `ಖಂಡಿತ${nameTag} — ನಿಮ್ಮ ಕುಟುಂಬದವರಿಗೆ ಈಗಲೇ ಮಾಹಿತಿ ಕಳುಹಿಸಲಾಗಿದೆ.`,
+      hi: `ठीक है${nameTag} — मैंने आपके परिवार को सूचित कर दिया है ताकि वे आपसे बात कर सकें।`,
+    };
+    return {
+      intent: 'symptom',
+      shouldLogCheckin: true,
+      symptoms: ['caregiver_callback_requested'],
+      severity: 'mild',
+      redFlag: false,
+      replyText: replies[locale],
+    };
+  }
+
+  const shortFollowupMatch =
+    clean.length <= 70 &&
+    lastAssistant &&
+    /^(yes|yeah|no|not\s*really|since\s+|yesterday|today|this\s+morning|a\s+little|getting\s+(better|worse)|after\s+)/i.test(
+      clean,
+    );
+  if (shortFollowupMatch) {
+    const replies = {
+      en: `Got it${nameTag} — thank you for sharing that detail ("${clean}"). Keep resting comfortably, stay hydrated, and let me know right away if discomfort increases or if you'd like me to alert your caregiver.`,
+      kn: `ಸರಿ${nameTag} — "${clean}" ಎಂದು ತಿಳಿಸಿದ್ದಕ್ಕೆ ಧನ್ಯವಾದಗಳು. ದಯವಿಟ್ಟು ವಿಶ್ರಾಂತಿ ಪಡೆಯಿರಿ, ತೊಂದರೆ ಹೆಚ್ಚಾದರೆ ತಿಳಿಸಿ.`,
+      hi: `समझ गया${nameTag} — "${clean}" बताने के लिए धन्यवाद। आराम करें और यदि तकलीफ बढ़े या परिवार को बताना हो तो तुरंत कहें।`,
+    };
+    return {
+      intent: 'general_conversation',
+      shouldLogCheckin: false,
+      symptoms: [],
+      severity: 'none',
+      redFlag: false,
+      replyText: replies[locale],
+    };
+  }
+
   // 7. Natural open-ended conversational reflection for ANY custom topic/problem
   const snippet = clean.length > 90 ? `${clean.slice(0, 87)}...` : clean;
   const openReplies = {

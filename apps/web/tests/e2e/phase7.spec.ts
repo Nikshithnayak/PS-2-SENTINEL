@@ -73,6 +73,10 @@ test.describe('Phase 7 Voice Check-In, Inbox Reply Webhook & Medications E2E', (
 
     // 1. /today Natural Conversational Companion + Red-Flag Escalation + Medication Taken tap
     await page.goto('/today');
+    const transcribeStatus = await page.request.get('/api/v1/voice/transcribe');
+    expect(transcribeStatus.status()).toBe(200);
+    await expect(page.locator('#voice-engine-select')).toBeVisible();
+
     const voiceInput = page.locator('#voice-transcript-input');
     const sendBtn = page.getByRole('button', { name: 'Send', exact: true });
 

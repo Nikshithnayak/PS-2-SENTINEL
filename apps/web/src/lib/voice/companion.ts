@@ -10,35 +10,64 @@ export interface ConversationalVoiceReplyResult {
 }
 
 interface LlmEndpointConfig {
-  apiKey: string;
+  apiKey: string | null;
   baseUrl: string;
   model: string;
 }
 
 function resolveLlmConfig(env: NodeJS.ProcessEnv = process.env): LlmEndpointConfig | null {
-  const apiKey =
-    env.LLM_PHRASING_API_KEY?.trim() ||
-    env.OPENAI_API_KEY?.trim() ||
-    env.GEMINI_API_KEY?.trim() ||
-    '';
-  if (!apiKey) return null;
+  const groqKey = env.GROQ_API_KEY?.trim();
+  const explicitKey = env.LLM_PHRASING_API_KEY?.trim();
+  const openaiKey = env.OPENAI_API_KEY?.trim();
+  const geminiKey = env.GEMINI_API_KEY?.trim();
+  const ollamaUrl = env.OLLAMA_BASE_URL?.trim();
 
-  const isGeminiKey = Boolean(!env.LLM_PHRASING_API_KEY && !env.OPENAI_API_KEY && env.GEMINI_API_KEY);
-  const baseUrl = (
-    env.LLM_PHRASING_BASE_URL?.trim() ||
-    (isGeminiKey
-      ? 'https://generativelanguage.googleapis.com/v1beta/openai'
-      : 'https://api.openai.com/v1')
-  ).replace(/\/$/, '');
-  const model =
-    env.LLM_PHRASING_MODEL?.trim() || (isGeminiKey ? 'gemini-2.0-flash' : 'gpt-4o-mini');
+  if (explicitKey) {
+    return {
+      apiKey: explicitKey,
+      baseUrl: (env.LLM_PHRASING_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/$/, ''),
+      model: env.LLM_PHRASING_MODEL?.trim() || 'gpt-4o-mini',
+    };
+  }
 
-  return { apiKey, baseUrl, model };
+  if (groqKey) {
+    return {
+      apiKey: groqKey,
+      baseUrl: 'https://api.groq.com/openai/v1',
+      model: env.LLM_PHRASING_MODEL?.trim() || 'openai/gpt-oss-20b',
+    };
+  }
+
+  if (geminiKey) {
+    return {
+      apiKey: geminiKey,
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      model: env.LLM_PHRASING_MODEL?.trim() || 'gemini-2.0-flash',
+    };
+  }
+
+  if (openaiKey) {
+    return {
+      apiKey: openaiKey,
+      baseUrl: 'https://api.openai.com/v1',
+      model: env.LLM_PHRASING_MODEL?.trim() || 'gpt-4o-mini',
+    };
+  }
+
+  if (ollamaUrl) {
+    return {
+      apiKey: null,
+      baseUrl: ollamaUrl.replace(/\/$/, ''),
+      model: env.LLM_PHRASING_MODEL?.trim() || 'llama3.2',
+    };
+  }
+
+  return null;
 }
 
 /**
  * Combines deterministic clinical red-flag triage with natural multi-turn LLM dialogue
- * (when configured via `LLM_PHRASING_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`)
+ * (supporting Groq free tier, Gemini free tier, local Ollama, or OpenAI-compatible endpoints)
  * and context-aware conversational NLU fallback.
  */
 export async function generateConversationalVoiceReply(params: {
@@ -48,7 +77,6 @@ export async function generateConversationalVoiceReply(params: {
   context?: VoiceConversationContext;
   conditions?: string[];
 }): Promise<ConversationalVoiceReplyResult> {
-  // Always compute deterministic clinical safety & symptom rules first
   const analysis = analyzeVoiceCheckin(
     params.transcript,
     params.locale,
@@ -57,13 +85,7 @@ export async function generateConversationalVoiceReply(params: {
   );
 
   const llmCfg = resolveLlmConfig();
-  if (!llmCfg) {
-    return { analysis, responderSource: 'conversational_nlu' };
-  }
-
-  // Red flags always keep the explicit deterministic safety & emergency number instruction,
-  // while non-red-flag turns benefit from rich real-time LLM conversation when configured.
-  if (analysis.redFlag) {
+  if (!llmCfg || analysis.redFlag) {
     return { analysis, responderSource: 'conversational_nlu' };
   }
 
@@ -90,10 +112,10 @@ export async function generateConversationalVoiceReply(params: {
     .join('; ');
 
   const systemPrompt = [
-    `You are Sachet, a warm, respectful, plain-language health check-in companion for elderly patients and their families.`,
-    `Always respond in ${langName}. Keep replies concise (2 to 4 warm natural sentences), easy to understand when read aloud, and directly answer what the user just said (greetings, questions, everyday aches, sleep, stress, diet, medications, etc.).`,
-    `Safety rules: Never invent vital measurements not given in context; never give a medical diagnosis; for any severe chest pain, breathing distress, fainting, or stroke signs tell the user to sit down and call emergency ${params.emergencyNumber}.`,
-    vitalsSummary ? `Grounded patient context: ${vitalsSummary}.` : `No recent watch readings recorded yet.`,
+    `You are Sachet, a warm, natural, respectful health check-in voice companion for elderly adults and their families.`,
+    `Respond in natural ${langName}. Keep replies clear, warm, and concise (2 to 4 short sentences) so they sound effortless when spoken aloud, and address exactly what the user just said (greetings, questions, everyday pain, stress, sleep, diet, meds, or casual conversation).`,
+    `Strict clinical safety: never invent sensor measurements not provided in context; never diagnose disease; for chest pain/tightness, trouble breathing, fainting, or stroke signs instruct sitting safely and calling Emergency ${params.emergencyNumber}.`,
+    vitalsSummary ? `Grounded patient context: ${vitalsSummary}.` : `No recent watch readings synced yet.`,
   ].join(' ');
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
@@ -106,19 +128,19 @@ export async function generateConversationalVoiceReply(params: {
   ];
 
   try {
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (llmCfg.apiKey) headers.Authorization = `Bearer ${llmCfg.apiKey}`;
+
     const res = await fetch(`${llmCfg.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${llmCfg.apiKey}`,
-        'content-type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         model: llmCfg.model,
         messages,
         temperature: 0.5,
         max_tokens: 220,
       }),
-      signal: AbortSignal.timeout(7500),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {
