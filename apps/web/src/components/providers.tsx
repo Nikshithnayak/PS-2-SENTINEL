@@ -5,7 +5,7 @@ import { MotionConfig } from 'motion/react';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { PwaOfflineBanner } from '@/components/pwa-offline-banner';
 
-type Theme = 'light' | 'dark';
+type Theme = 'light';
 
 interface ThemeContextValue {
   theme: Theme;
@@ -34,27 +34,13 @@ export function Providers({ children }: { children: ReactNode }) {
       }),
   );
 
-  const [theme, setTheme] = useState<Theme>('light');
-
   useEffect(() => {
-    const saved = window.localStorage.getItem('sentinel-theme') as Theme | null;
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const initial: Theme = saved === 'dark' || saved === 'light' ? saved : prefersDark ? 'dark' : 'light';
-    setTheme(initial);
-    document.documentElement.classList.toggle('dark', initial === 'dark');
+    document.documentElement.classList.remove('dark');
+    window.localStorage.removeItem('sentinel-theme');
   }, []);
 
-  const toggleTheme = () => {
-    setTheme((prev) => {
-      const next: Theme = prev === 'light' ? 'dark' : 'light';
-      window.localStorage.setItem('sentinel-theme', next);
-      document.documentElement.classList.toggle('dark', next === 'dark');
-      return next;
-    });
-  };
-
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme: 'light', toggleTheme: () => {} }}>
       <QueryClientProvider client={queryClient}>
         <MotionConfig reducedMotion="user">
           <PwaOfflineBanner />

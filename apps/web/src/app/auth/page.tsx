@@ -17,7 +17,6 @@ import {
   Users,
 } from 'lucide-react';
 import { authClient } from '@/lib/auth-client';
-import { ThemeToggle } from '@/components/theme-toggle';
 
 interface AuthProvidersState {
   google: {
@@ -172,11 +171,10 @@ export default function AuthPage() {
             <span>Back to Home</span>
           </Link>
           <div className="flex items-center gap-2">
-            <span className="hidden items-center gap-1.5 rounded-full bg-[var(--bg-mint-panel)] px-3 py-1 text-xs font-semibold text-[var(--brand-accent-text)] sm:inline-flex">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--bg-mint-panel)] px-3 py-1 text-xs font-semibold text-[var(--brand-accent-text)]">
               <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
               Pre-Login PHI Isolation
             </span>
-            <ThemeToggle />
           </div>
         </div>
       </header>

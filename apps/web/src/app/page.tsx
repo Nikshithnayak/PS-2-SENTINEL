@@ -15,7 +15,6 @@ import {
   Users,
   Watch,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
 import { CalmFade } from '@/components/motion/primitives';
 import { PulseHeroVisual } from '@/components/visuals/pulse-hero';
 import { getPool } from '@/db';
@@ -154,7 +153,6 @@ export default async function HomePage() {
             >
               <span>{session ? session.name : 'Sign In'}</span>
             </Link>
-            <ThemeToggle />
           </nav>
         </div>
       </header>

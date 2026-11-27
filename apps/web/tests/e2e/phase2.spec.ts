@@ -91,6 +91,25 @@ test.describe('Phase 2 Data Ingestion & Smartwatch Sync E2E', () => {
     await expect(page.getByText('apple_health_xml').first()).toBeVisible();
     await expect(page.getByText('Real Import').first()).toBeVisible();
 
+    // Upload real Google Fit Takeout Data Points JSON file via phone/desktop file picker
+    const gfFixturePath = resolve(EVIDENCE_DIR, 'google-fit-sample.json');
+    writeFileSync(
+      gfFixturePath,
+      JSON.stringify({
+        'Data Source': 'derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm',
+        'Data Points': [
+          {
+            startTimeNanos: '1795700000000000000',
+            endTimeNanos: '1795700060000000000',
+            fitValue: [{ value: { fpVal: 71 } }],
+          },
+        ],
+      }),
+      'utf8',
+    );
+    await page.locator('#google-fit-file-input').setInputFiles(gfFixturePath);
+    await expect(page.getByText(/Imported 1 samples via takeout_json/i)).toBeVisible();
+
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'ingest-desktop.png'), fullPage: true });
 
     const axeRes = await new AxeBuilder({ page }).analyze();
@@ -100,6 +119,11 @@ test.describe('Phase 2 Data Ingestion & Smartwatch Sync E2E', () => {
     expect(serious).toEqual([]);
 
     await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.getByRole('link', { name: 'Watch', exact: true })).toBeVisible();
+    const hasOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 2,
+    );
+    expect(hasOverflow).toBe(false);
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'ingest-mobile.png'), fullPage: true });
 
     expect(consoleErrors).toEqual([]);

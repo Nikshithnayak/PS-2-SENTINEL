@@ -174,15 +174,17 @@ export default function IngestPage() {
   });
 
   const csvImportMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (override?: { format: 'csv' | 'takeout_json'; content: string }) => {
+      const fmt = override?.format ?? importFormat;
+      const bodyText = override?.content ?? rawText;
       const res = await fetch('/api/v1/import/csv-takeout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          format: importFormat,
-          content: rawText,
+          format: fmt,
+          content: bodyText,
           mapping:
-            importFormat === 'csv'
+            fmt === 'csv'
               ? {
                 timestampColumn: tsCol,
                 metricColumn: metricCol,
@@ -194,11 +196,11 @@ export default function IngestPage() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? 'Import failed');
-      return body;
+      return { ...(body as { ingest: { recordsAccepted: number } }), fmt };
     },
     onSuccess: (data) => {
       setErrorMsg(null);
-      setStatusMsg(`Imported ${data.ingest.recordsAccepted} samples via ${importFormat}.`);
+      setStatusMsg(`Imported ${data.ingest.recordsAccepted} samples via ${data.fmt}.`);
       qc.invalidateQueries({ queryKey: ['quality-status'] });
     },
     onError: (err) => setErrorMsg(err instanceof Error ? err.message : 'Import failed'),
@@ -250,9 +252,22 @@ export default function IngestPage() {
     }
   }
 
+  async function onPhoneFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const detectedFormat: 'csv' | 'takeout_json' =
+      file.name.toLowerCase().endsWith('.json') || text.trimStart().startsWith('{') || text.trimStart().startsWith('[')
+        ? 'takeout_json'
+        : 'csv';
+    setImportFormat(detectedFormat);
+    setRawText(text.slice(0, 50_000));
+    csvImportMutation.mutate({ format: detectedFormat, content: text });
+  }
+
   function onCsvSubmit(e: FormEvent) {
     e.preventDefault();
-    csvImportMutation.mutate();
+    csvImportMutation.mutate(undefined);
   }
 
   const isUnauth = qualityQuery.error?.message === '401';
@@ -417,7 +432,9 @@ export default function IngestPage() {
                         className="h-5 w-5 shrink-0 text-[var(--brand-primary)]"
                         aria-hidden="true"
                       />
-                      <h2 className="text-lg font-semibold">CSV Column Mapper & Takeout Import</h2>
+                      <h2 className="text-lg font-semibold">
+                        Google Fit, Health Connect &amp; CSV Import
+                      </h2>
                     </div>
                     <select
                       aria-label="Import format"
@@ -425,10 +442,34 @@ export default function IngestPage() {
                       onChange={(e) => setImportFormat(e.target.value as 'csv' | 'takeout_json')}
                       className="min-h-10 max-w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2 text-xs font-semibold"
                     >
-                      <option value="csv">Generic CSV</option>
-                      <option value="takeout_json">Google / Fitbit Takeout JSON</option>
+                      <option value="csv">Google Fit Daily CSV / Custom CSV</option>
+                      <option value="takeout_json">Google Fit / Health Connect / Fitbit JSON</option>
                     </select>
                   </div>
+
+                  <p className="mt-1.5 text-xs text-[var(--text-muted)]">
+                    Pick an exported <code className="font-[family-name:var(--font-mono)]">.json</code>{' '}
+                    or <code className="font-[family-name:var(--font-mono)]">.csv</code> from Google
+                    Fit (Takeout), Android Health Connect, or Fitbit right from your phone or PC:
+                  </p>
+
+                  <label
+                    htmlFor="google-fit-file-input"
+                    className="mt-3 flex min-h-12 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-2.5 text-center text-sm font-semibold hover:border-[var(--brand-primary)]"
+                  >
+                    <span>
+                      {csvImportMutation.isPending
+                        ? 'Importing phone/watch export...'
+                        : 'Choose Google Fit / Health Connect / CSV File'}
+                    </span>
+                    <input
+                      id="google-fit-file-input"
+                      type="file"
+                      accept=".csv,.json,text/csv,application/json"
+                      onChange={(e) => void onPhoneFileChange(e)}
+                      className="sr-only"
+                    />
+                  </label>
 
                   {importFormat === 'csv' && (
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">

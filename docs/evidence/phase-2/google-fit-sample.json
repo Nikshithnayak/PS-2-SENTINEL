@@ -1,0 +1,1 @@
+{"Data Source":"derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm","Data Points":[{"startTimeNanos":"1795700000000000000","endTimeNanos":"1795700060000000000","fitValue":[{"value":{"fpVal":71}}]}]}

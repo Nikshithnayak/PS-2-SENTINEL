@@ -48,3 +48,6 @@ coverage/
 Thumbs.db
 .kilo/
 .kilocode/
+
+.vercel
+.env*

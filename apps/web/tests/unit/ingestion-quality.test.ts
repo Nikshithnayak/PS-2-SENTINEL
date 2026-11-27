@@ -73,6 +73,50 @@ describe('Phase 2 Importers, Data Quality & Provenance', () => {
       ]),
     );
     expect(jsonRes.samples).toHaveLength(3);
+
+    // Google Fit Daily activity metrics.csv wide auto-detection
+    const googleFitCsv =
+      'Date,Move Minutes count,Step count,Average heart rate (bpm),Min heart rate (bpm)\n' +
+      '2026-11-26,35,6420,74,62\n';
+    const gfCsvRes = parseCsvWithMapper(googleFitCsv, {
+      timestampColumn: 'timestamp',
+      valueColumn: 'value',
+      metricColumn: 'metric',
+      unitColumn: 'unit',
+    });
+    expect(gfCsvRes.samples).toHaveLength(3);
+    expect(gfCsvRes.samples.some((s) => s.metricType === 'steps' && s.value === 6420)).toBe(true);
+    expect(
+      gfCsvRes.samples.some((s) => s.metricType === 'resting_heart_rate' && s.value === 62),
+    ).toBe(true);
+
+    // Google Fit Takeout Data Points JSON
+    const gfJsonRes = parseTakeoutJson(
+      JSON.stringify({
+        'Data Source': 'derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm',
+        'Data Points': [
+          {
+            startTimeNanos: '1795700000000000000',
+            endTimeNanos: '1795700060000000000',
+            fitValue: [{ value: { fpVal: 73.5 } }],
+          },
+        ],
+      }),
+    );
+    expect(gfJsonRes.samples).toHaveLength(1);
+    expect(gfJsonRes.samples[0]?.metricType).toBe('heart_rate');
+    expect(gfJsonRes.samples[0]?.value).toBe(73.5);
+
+    // Android Health Connect JSON
+    const hcRes = parseTakeoutJson(
+      JSON.stringify([
+        { samples: [{ beatsPerMinute: 76, time: '2026-11-26T10:00:00Z' }] },
+        { startTime: '2026-11-26T00:00:00Z', endTime: '2026-11-26T07:00:00Z', stages: [{}] },
+      ]),
+    );
+    expect(hcRes.samples).toHaveLength(2);
+    expect(hcRes.samples[1]?.metricType).toBe('sleep_duration_min');
+    expect(hcRes.samples[1]?.value).toBe(420);
   });
 
   it('deduplicates batches, rejects out-of-bounds, and flags motion artifacts', async () => {

@@ -59,18 +59,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const out =
-    parsed.data.format === 'takeout_json'
-      ? parseTakeoutJson(parsed.data.content)
-      : parseCsvWithMapper(
-          parsed.data.content,
-          parsed.data.mapping ?? {
-            timestampColumn: 'timestamp',
-            valueColumn: 'value',
-            metricColumn: 'metric',
-            unitColumn: 'unit',
-          },
-        );
+  let out: { samples: import('@sentinel/shared').VitalSampleInput[]; skipped: number };
+  try {
+    out =
+      parsed.data.format === 'takeout_json'
+        ? parseTakeoutJson(parsed.data.content)
+        : parseCsvWithMapper(
+            parsed.data.content,
+            parsed.data.mapping ?? {
+              timestampColumn: 'timestamp',
+              valueColumn: 'value',
+              metricColumn: 'metric',
+              unitColumn: 'unit',
+            },
+          );
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Unable to parse import file' },
+      { status: 400 },
+    );
+  }
 
   if (out.samples.length === 0) {
     return NextResponse.json({ error: 'No valid records parsed', skipped: out.skipped }, { status: 400 });

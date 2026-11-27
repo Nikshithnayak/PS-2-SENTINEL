@@ -14,7 +14,6 @@ import {
   Stethoscope,
   Users,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
 import { SyntheticBadge } from '@/components/health/status-badge';
 
 const NAV_LINKS = [
@@ -84,7 +83,6 @@ export function SentinelNav({
             );
           })}
           {rightSlot}
-          <ThemeToggle />
         </nav>
       </div>
     </header>

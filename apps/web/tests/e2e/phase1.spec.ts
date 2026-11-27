@@ -39,26 +39,34 @@ test.describe('Phase 1 Foundations E2E & Accessibility', () => {
     );
     expect(seriousHome).toEqual([]);
 
-    // Design System Dark Mode check
+    // Light healthcare theme only (no dark mode toggle)
     await page.goto('/design');
-    await page.getByRole('button', { name: /Switch to dark theme/i }).click();
-    await expect(page.locator('html')).toHaveClass(/dark/);
-    await page.waitForTimeout(200);
+    await expect(page.getByRole('button', { name: /Switch to dark theme/i })).toHaveCount(0);
+    await expect(page.locator('html')).not.toHaveClass(/dark/);
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'design-dark.png'), fullPage: true });
-    await page.getByRole('button', { name: /Switch to light theme/i }).click();
 
     // Auth page must be 100% clean (no Quick Open, no Seeded Local Demo Accounts, empty fields)
     await page.goto('/auth');
     const providersRes = await page.request.get('/api/v1/auth/providers');
     expect(providersRes.status()).toBe(200);
+    const providersJson = (await providersRes.json()) as { google: { enabled: boolean } };
     await expect(page.getByText(/Seeded Local Demo Accounts/i)).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Quick Open/i })).toHaveCount(0);
     await expect(page.getByLabel('Email Address')).toHaveValue('');
 
     const googleBtn = page.getByTestId('google-signin-button');
     await expect(googleBtn).toBeVisible();
-    await googleBtn.click();
-    await expect(page.getByTestId('google-setup-notice')).toContainText('GOOGLE_CLIENT_ID');
+    if (providersJson.google.enabled) {
+      const oauthRes = await page.request.post('/api/auth/sign-in/social', {
+        data: { provider: 'google', callbackURL: '/today', disableRedirect: true },
+      });
+      expect(oauthRes.status()).toBe(200);
+      const oauthJson = (await oauthRes.json()) as { url?: string };
+      expect(oauthJson.url).toContain('accounts.google.com/o/oauth2/v2/auth');
+    } else {
+      await googleBtn.click();
+      await expect(page.getByTestId('google-setup-notice')).toContainText('GOOGLE_CLIENT_ID');
+    }
 
     const authAxe = await new AxeBuilder({ page }).analyze();
     expect(authAxe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')).toEqual([]);
