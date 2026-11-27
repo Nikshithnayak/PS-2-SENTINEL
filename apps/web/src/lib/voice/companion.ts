@@ -85,7 +85,14 @@ export async function generateConversationalVoiceReply(params: {
   );
 
   const llmCfg = resolveLlmConfig();
-  if (!llmCfg || analysis.redFlag) {
+  // Known, safety-sensitive, and context-grounded responses should never wait
+  // on an external LLM. The deterministic parser returns immediately and is
+  // used for greetings, symptoms, vitals, and all clinical red flags.
+  if (
+    !llmCfg ||
+    analysis.redFlag ||
+    analysis.intent !== 'general_conversation'
+  ) {
     return { analysis, responderSource: 'conversational_nlu' };
   }
 

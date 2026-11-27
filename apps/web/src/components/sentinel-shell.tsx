@@ -33,7 +33,7 @@ export function SentinelShell({
   }
 
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] text-[var(--text-primary)] pb-24 lg:pb-0 print:pb-0">
+    <div className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] text-[var(--text-primary)] pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-0 print:pb-0">
       {/* Role-Specific Left Rail Navigation */}
       <aside
         aria-label="Primary sidebar navigation"
@@ -118,7 +118,7 @@ export function SentinelShell({
 
       {/* Main Content Area */}
       <div className="lg:pl-64 print:pl-0">
-        <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/92 backdrop-blur-md print:hidden">
+        <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/95 pt-[env(safe-area-inset-top)] backdrop-blur-md print:hidden">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
             <div className="flex min-w-0 flex-wrap items-center gap-2.5">
               <Link
@@ -130,7 +130,7 @@ export function SentinelShell({
                 <span>SENTINEL</span>
               </Link>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <h1 className="font-[family-name:var(--font-display)] text-lg font-bold leading-tight sm:text-xl">
                     {title}
                   </h1>
@@ -185,7 +185,7 @@ export function SentinelShell({
 
           <nav
             aria-label="Mobile workspace links"
-            className="mx-auto flex max-w-7xl gap-2 overflow-x-auto border-t border-[var(--border-subtle)] px-4 py-2 lg:hidden"
+            className="mx-auto flex max-w-7xl gap-2 overflow-x-auto border-t border-[var(--border-subtle)] px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden"
           >
             {workspace.mobileQuickLinks.map((item) => {
               const Icon = item.icon;
@@ -209,7 +209,7 @@ export function SentinelShell({
       {/* Role-Specific Mobile Bottom Tab Bar */}
       <nav
         aria-label="Mobile quick navigation"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]/95 px-1 py-1.5 backdrop-blur-md lg:hidden print:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]/95 px-1 pb-[calc(0.375rem+env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-md lg:hidden print:hidden"
       >
         {workspace.mobileTabs.map((tab) => {
           const Icon = tab.icon;

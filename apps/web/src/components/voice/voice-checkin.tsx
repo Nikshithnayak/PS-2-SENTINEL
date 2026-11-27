@@ -186,6 +186,19 @@ export function VoiceCheckinCompanion({
   }, [handsFreeMode]);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || !('Worker' in window)) return;
+    const preloadTimer = window.setTimeout(() => {
+      try {
+        const worker = getOrCreateWhisperWorker();
+        worker.postMessage({ type: 'preload' });
+      } catch {
+        // Whisper remains available to retry on demand.
+      }
+    }, 600);
+    return () => window.clearTimeout(preloadTimer);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     fetch('/api/v1/voice/transcribe')
       .then((r) => (r.ok ? r.json() : null))
@@ -478,7 +491,7 @@ export function VoiceCheckinCompanion({
         } else if (heardSpeech) {
           if (silenceStartedAt === null) {
             silenceStartedAt = Date.now();
-          } else if (Date.now() - silenceStartedAt > 1650) {
+          } else if (Date.now() - silenceStartedAt > 1050) {
             manualStopRef.current = false;
             if (recorder.state === 'recording') recorder.stop();
             return;
@@ -547,7 +560,7 @@ export function VoiceCheckinCompanion({
               // Ignore stop error
             }
           }
-        }, 1600);
+        }, 900);
       };
 
       recog.onresult = (ev) => {
@@ -630,6 +643,7 @@ export function VoiceCheckinCompanion({
         mediaRecorderRef.current.stop();
         return;
       }
+      manualStopRef.current = false; // Browser recognition should submit immediately on Finish & Send.
       try {
         recognitionRef.current?.stop();
       } catch {

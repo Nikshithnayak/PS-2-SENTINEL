@@ -46,8 +46,7 @@ coverage/
 # OS & Editor
 .DS_Store
 Thumbs.db
-.kilo/
-.kilocode/
+apps/web/AGENTS.md
 
 .vercel
 .env*
