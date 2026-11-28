@@ -112,3 +112,46 @@ export function resolveInboxWebhookSecret(env: NodeJS.ProcessEnv = process.env):
     null
   );
 }
+
+export interface ChannelEnvReadiness {
+  inApp: { configured: true };
+  webPush: { configured: boolean; publicKey: string | null; source: VapidConfig['source'] };
+  ntfy: { configured: boolean; topicUrl: string | null };
+  email: { configured: boolean; from: string };
+  telegram: { configured: boolean };
+  sms: { configured: boolean };
+}
+
+/**
+ * Returns honest live readiness for every outbound alert channel based on server env vars.
+ */
+export function resolveChannelEnvReadiness(
+  env: NodeJS.ProcessEnv = process.env,
+): ChannelEnvReadiness {
+  const vapid = resolveVapidConfig(env);
+  const ntfy = resolveNtfyConfig(env);
+  const topicUrl = ntfy.topic ? `${ntfy.baseUrl.replace(/\/$/, '')}/${encodeURIComponent(ntfy.topic)}` : null;
+
+  return {
+    inApp: { configured: true },
+    webPush: {
+      configured: Boolean(vapid.publicKey && vapid.privateKey),
+      publicKey: vapid.publicKey,
+      source: vapid.source,
+    },
+    ntfy: {
+      configured: Boolean(topicUrl),
+      topicUrl,
+    },
+    email: {
+      configured: Boolean(env.RESEND_API_KEY?.trim()),
+      from: resolveEmailFrom(env),
+    },
+    telegram: {
+      configured: Boolean(env.TELEGRAM_BOT_TOKEN?.trim() && env.TELEGRAM_DEFAULT_CHAT_ID?.trim()),
+    },
+    sms: {
+      configured: isSmsAdapterEnabled(env),
+    },
+  };
+}

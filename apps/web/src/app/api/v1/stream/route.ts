@@ -1,8 +1,9 @@
 import { type NextRequest } from 'next/server';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { withSystemDb } from '@/db';
-import { patientProfiles } from '@/db/schema';
+import { alerts, checkinEvents, patientProfiles } from '@/db/schema';
 import { subscribePatientEvents } from '@/lib/alerts/events';
+import { processDueEscalationsIfNeeded } from '@/lib/alerts/outbox';
 import { checkPatientScope, requireSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
         if (closed) return;
         closed = true;
         clearInterval(keepalive);
+        clearInterval(dbPoll);
         clearTimeout(gracefulCloseTimer);
         unsubscribe();
         try {
@@ -75,6 +77,51 @@ export async function GET(request: NextRequest) {
       const unsubscribe = subscribePatientEvents(targetPatientId, (evt) => {
         send(evt.type, evt);
       });
+
+      let lastFingerprint: string | null = null;
+      const pollDbChanges = async () => {
+        if (closed) return;
+        try {
+          await processDueEscalationsIfNeeded(targetPatientId);
+          const snap = await withSystemDb(async (tx) => {
+            const [latestAlert] = await tx
+              .select({
+                id: alerts.id,
+                status: alerts.status,
+                escalationStep: alerts.escalationStep,
+                updatedAt: alerts.updatedAt,
+              })
+              .from(alerts)
+              .where(eq(alerts.patientId, targetPatientId))
+              .orderBy(desc(alerts.updatedAt))
+              .limit(1);
+            const [latestCheckin] = await tx
+              .select({ id: checkinEvents.id, recordedAt: checkinEvents.recordedAt })
+              .from(checkinEvents)
+              .where(eq(checkinEvents.patientId, targetPatientId))
+              .orderBy(desc(checkinEvents.recordedAt))
+              .limit(1);
+            return `${latestAlert?.id ?? ''}:${latestAlert?.status ?? ''}:${latestAlert?.escalationStep ?? ''}:${latestAlert?.updatedAt?.toISOString() ?? ''}|${latestCheckin?.id ?? ''}`;
+          });
+          if (lastFingerprint === null) {
+            lastFingerprint = snap;
+          } else if (snap !== lastFingerprint) {
+            lastFingerprint = snap;
+            send('alert.created', {
+              type: 'alert.created',
+              patientId: targetPatientId,
+              timestamp: new Date().toISOString(),
+              data: { source: 'db_sync' },
+            });
+          }
+        } catch {
+          // Non-fatal DB sync tick
+        }
+      };
+      void pollDbChanges();
+      const dbPoll = setInterval(() => {
+        void pollDbChanges();
+      }, 4_000);
 
       const keepalive = setInterval(() => {
         if (closed) return;

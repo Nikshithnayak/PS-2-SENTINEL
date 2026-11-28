@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { withSystemDb } from '@/db';
-import { alerts, patientProfiles } from '@/db/schema';
+import { alerts, careCircleMembers, patientProfiles } from '@/db/schema';
 import { applyAlertAction } from '@/lib/alerts/outbox';
 import { resolveInboxWebhookSecret } from '@/lib/alerts/env-config';
 import { parseCaregiverReplyCommand } from '@/lib/alerts/reply-parser';
@@ -44,11 +44,27 @@ export async function POST(request: NextRequest) {
 
   let targetAlertId = parsed.data.alertId;
   if (!targetAlertId) {
-    const patientId =
+    let patientId =
       parsed.data.patientId ??
-      (sessionCtx ? (await getAccessiblePatientIds(sessionCtx))[0] : undefined) ??
-      (await withSystemDb((tx) => tx.select({ id: patientProfiles.id }).from(patientProfiles).limit(1)))[0]
-        ?.id;
+      (sessionCtx ? (await getAccessiblePatientIds(sessionCtx))[0] : undefined);
+
+    if (!patientId && parsed.data.fromEmail) {
+      const normalizedFrom = parsed.data.fromEmail.trim().toLowerCase();
+      const [memberLink] = await withSystemDb((tx) =>
+        tx
+          .select({ patientId: careCircleMembers.patientId })
+          .from(careCircleMembers)
+          .where(eq(careCircleMembers.invitedEmail, normalizedFrom))
+          .limit(1),
+      );
+      patientId = memberLink?.patientId;
+    }
+
+    if (!patientId) {
+      patientId = (
+        await withSystemDb((tx) => tx.select({ id: patientProfiles.id }).from(patientProfiles).limit(1))
+      )[0]?.id;
+    }
 
     if (!patientId) {
       return NextResponse.json({ error: 'No target patient or alert found' }, { status: 404 });
@@ -58,7 +74,12 @@ export async function POST(request: NextRequest) {
       tx
         .select({ id: alerts.id })
         .from(alerts)
-        .where(inArray(alerts.status, ['open', 'escalated', 'snoozed']))
+        .where(
+          and(
+            eq(alerts.patientId, patientId),
+            inArray(alerts.status, ['open', 'escalated', 'snoozed']),
+          ),
+        )
         .orderBy(desc(alerts.createdAt))
         .limit(1),
     );

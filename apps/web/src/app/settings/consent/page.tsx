@@ -111,13 +111,15 @@ export default function ConsentLedgerPage() {
 
   const inviteMutation = useMutation({
     mutationFn: async () => {
+      const priorityOrder =
+        inviteRel === 'primary_caregiver' ? 1 : inviteRel === 'secondary_caregiver' ? 2 : 3;
       const res = await fetch('/api/v1/care-circle', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           email: inviteEmail,
           relationship: inviteRel,
-          priorityOrder: 2,
+          priorityOrder,
         }),
       });
       const json = await res.json();

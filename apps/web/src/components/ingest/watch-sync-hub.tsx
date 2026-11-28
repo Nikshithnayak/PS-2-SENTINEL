@@ -206,6 +206,7 @@ export function WatchSyncHub({
           body: JSON.stringify({
             patientId,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+            evaluate: true,
             samples: trailing,
           }),
         }).catch(() => {});
@@ -292,6 +293,7 @@ export function WatchSyncHub({
         body: JSON.stringify({
           patientId,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+          evaluate: true,
           samples: toSend,
         }),
       });

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, KeyRound, ShieldAlert, Sliders, Users } from 'lucide-react';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { NotificationSetupCard } from '@/components/alerts/notification-setup-card';
 import { SentinelShell } from '@/components/sentinel-shell';
 
 interface ProfilePayload {
@@ -168,6 +169,8 @@ export default function SettingsPage() {
                 <span>Manage Wearable Providers & API Keys</span>
               </Link>
             </div>
+
+            <NotificationSetupCard patientId={profileQuery.data?.profile?.id ?? null} />
 
             {/* Alert Policy & Clinical Profile Form */}
             <form

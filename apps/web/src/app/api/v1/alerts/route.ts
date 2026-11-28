@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { and, desc, eq } from 'drizzle-orm';
 import { appendAuditLog, withSystemDb } from '@/db';
 import { alertDeliveries, alerts, patientProfiles } from '@/db/schema';
+import { processDueEscalationsIfNeeded } from '@/lib/alerts/outbox';
 import { getAccessiblePatientIds } from '@/lib/dashboard/queries';
 import { checkPatientScope, requireSession } from '@/lib/session';
 
@@ -39,6 +40,8 @@ export async function GET(request: NextRequest) {
   if (!hasVitalsScope && !hasAlertScope) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+
+  await processDueEscalationsIfNeeded(patientId);
 
   const payload = await withSystemDb(async (tx) => {
     const [profile] = await tx

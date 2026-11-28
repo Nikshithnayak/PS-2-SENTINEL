@@ -3,7 +3,6 @@ import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { appendAuditLog, withSystemDb } from '@/db';
 import {
-  alerts,
   checkinEvents,
   medications,
   patientProfiles,
@@ -12,7 +11,7 @@ import {
   vitalSamples,
 } from '@/db/schema';
 import { publishPatientEvent } from '@/lib/alerts/events';
-import { processOutboxBatch } from '@/lib/alerts/outbox';
+import { triggerDirectCheckinAlert } from '@/lib/alerts/outbox';
 import { getAccessiblePatientIds } from '@/lib/dashboard/queries';
 import { checkPatientScope, requireSession } from '@/lib/session';
 import { generateConversationalVoiceReply } from '@/lib/voice/companion';
@@ -150,8 +149,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await withSystemDb(async (tx) => {
-    const [checkin] = await tx
+  const shouldTriggerAlert =
+    analysis.redFlag || analysis.symptoms.includes('caregiver_callback_requested');
+
+  const checkin = await withSystemDb(async (tx) => {
+    const [row] = await tx
       .insert(checkinEvents)
       .values({
         patientId,
@@ -164,32 +166,11 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    let triggeredAlertId: string | null = null;
-    if (analysis.redFlag) {
-      const [created] = await tx
-        .insert(alerts)
-        .values({
-          patientId,
-          alertType: 'voice_checkin_urgent',
-          level: 'urgent',
-          ruleKey: `voice_red_flag:${analysis.symptoms.join('+')}`,
-          summaryEn: `Patient voice check-in reported severe symptoms (${analysis.symptoms.join(', ')}). Check immediately or call Emergency ${patientCtx.emergencyNumber}.`,
-          summaryKn: `ಧ್ವನಿ ತಪಾಸಣೆಯಲ್ಲಿ ಗಂಭೀರ ಲಕ್ಷಣಗಳು (${analysis.symptoms.join(', ')}) ಕಂಡುಬಂದಿವೆ.`,
-          summaryHi: `वॉयस जांच में गंभीर लक्षण (${analysis.symptoms.join(', ')}) बताए गए हैं।`,
-          status: 'open',
-          escalationStep: 1,
-          nextEscalationAt: new Date(Date.now() + 5 * 60_000),
-          isSynthetic: parsed.data.isSynthetic,
-        })
-        .returning({ id: alerts.id });
-      triggeredAlertId = created?.id ?? null;
-    }
-
     await appendAuditLog(tx, {
       actorUserId: ctx.userId,
       action: 'voice.checkin_processed',
       targetType: 'checkin_event',
-      targetId: checkin?.id ?? patientId,
+      targetId: row?.id ?? patientId,
       payload: {
         patientId,
         channel: parsed.data.channel,
@@ -198,37 +179,46 @@ export async function POST(request: NextRequest) {
         severity: analysis.severity,
         redFlag: analysis.redFlag,
         responderSource,
-        triggeredAlertId,
       },
     });
 
-    return { checkin, triggeredAlertId };
+    return row;
   });
 
-  if (result.triggeredAlertId) {
-    await processOutboxBatch(patientId);
-    publishPatientEvent({
-      type: 'alert.created',
+  let triggeredAlertId: string | null = null;
+  if (shouldTriggerAlert) {
+    const level = analysis.redFlag ? 'urgent' : 'warning';
+    const symptomLabel = analysis.symptoms.length ? analysis.symptoms.join(', ') : 'voice check-in';
+    const directRes = await triggerDirectCheckinAlert({
       patientId,
-      timestamp: new Date().toISOString(),
-      data: { alertId: result.triggeredAlertId, source: 'voice_red_flag' },
+      actorUserId: ctx.userId,
+      alertType: 'voice_checkin_urgent',
+      level,
+      ruleKey: `voice_red_flag:${analysis.symptoms.join('+') || 'callback'}`,
+      summaryEn: analysis.redFlag
+        ? `Patient voice check-in reported severe symptoms (${symptomLabel}). Check immediately or call Emergency ${patientCtx.emergencyNumber}.`
+        : `Patient asked voice assistant to contact caregiver (${symptomLabel}). Please reach out and check in.`,
+      summaryKn: `ಧ್ವನಿ ತಪಾಸಣೆಯಲ್ಲಿ ಲಕ್ಷಣಗಳು (${symptomLabel}) ಕಂಡುಬಂದಿವೆ. ದಯವಿಟ್ಟು ತಕ್ಷಣ ವಿಚಾರಿಸಿ.`,
+      summaryHi: `वॉयस जांच में लक्षण (${symptomLabel}) बताए गए हैं। कृपया तुरंत संपर्क करें।`,
+      isSynthetic: parsed.data.isSynthetic,
     });
+    triggeredAlertId = directRes.alertId;
   } else {
     publishPatientEvent({
       type: 'engine.evaluated',
       patientId,
       timestamp: new Date().toISOString(),
-      data: { checkinId: result.checkin?.id, kind: 'voice' },
+      data: { checkinId: checkin?.id, kind: 'voice' },
     });
   }
 
   return NextResponse.json(
     {
-      checkin: result.checkin,
+      checkin,
       conversationOnly: false,
       analysis,
       responderSource,
-      triggeredAlertId: result.triggeredAlertId,
+      triggeredAlertId,
     },
     { status: 201 },
   );

@@ -14,6 +14,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
+import { NotificationSetupCard } from '@/components/alerts/notification-setup-card';
 import { SentinelShell } from '@/components/sentinel-shell';
 
 interface AlertsResponse {
@@ -92,6 +93,7 @@ export default function AlertsOperationsPage() {
 
   const alertsQuery = useQuery<AlertsResponse>({
     queryKey: ['alerts-ops'],
+    refetchInterval: 20_000,
     queryFn: async () => {
       const res = await fetch('/api/v1/alerts');
       if (!res.ok) throw new Error(`${res.status}`);
@@ -244,6 +246,8 @@ export default function AlertsOperationsPage() {
                 {evaluateMutation.isPending ? 'Evaluating...' : 'Evaluate & Dispatch Alerts'}
               </button>
             </section>
+
+            <NotificationSetupCard patientId={alertsQuery.data?.patientId ?? null} />
 
             {/* Emergency Numbers & Nearest Hospitals */}
             <section className="rounded-2xl border border-[var(--status-urgent)] bg-[var(--bg-surface)] p-6">

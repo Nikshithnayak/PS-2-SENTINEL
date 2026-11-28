@@ -14,6 +14,7 @@ import {
   user,
 } from '@/db/schema';
 import type { EngineEvaluationResult } from '@/lib/engine/client';
+import { resolveChannelEnvReadiness, type ChannelEnvReadiness } from '@/lib/alerts/env-config';
 import { dispatchChannelDelivery } from '@/lib/alerts/adapters';
 import { publishPatientEvent } from '@/lib/alerts/events';
 import { computeBoundedSensitivityUpdate, evaluateAlertPolicy } from '@/lib/alerts/policy';
@@ -126,7 +127,7 @@ async function resolveRecipientsForStep(
             name: secondary.name,
             email: secondary.email,
             roleLabel: 'secondary_caregiver',
-            channels: ['in_app', 'email', 'telegram'],
+            channels: ['in_app', 'email', 'web_push', 'ntfy', 'telegram'],
           });
         }
       }
@@ -137,7 +138,7 @@ async function resolveRecipientsForStep(
           name: clinicians[0].name,
           email: clinicians[0].email,
           roleLabel: 'clinician',
-          channels: ['in_app', 'email'],
+          channels: ['in_app', 'email', 'web_push', 'ntfy'],
         });
       }
     }
@@ -235,25 +236,7 @@ export async function processOutboxBatch(patientId?: string): Promise<{
       actionToken?: string;
     };
 
-    let pushSub: { endpoint: string; p256dh: string; auth: string } | null = null;
-    if (row.channel === 'web_push' && row.recipientUserId) {
-      const subs = await withSystemDb((tx) =>
-        tx
-          .select()
-          .from(pushSubscriptions)
-          .where(eq(pushSubscriptions.userId, row.recipientUserId!))
-          .limit(1),
-      );
-      if (subs[0]) {
-        pushSub = {
-          endpoint: subs[0].endpoint,
-          p256dh: subs[0].p256dh,
-          auth: subs[0].auth,
-        };
-      }
-    }
-
-    const res = await dispatchChannelDelivery({
+    const baseDispatch = {
       channel: row.channel as ChannelType,
       alertId: row.alertId,
       recipientEmail: payload.recipientEmail ?? null,
@@ -261,8 +244,50 @@ export async function processOutboxBatch(patientId?: string): Promise<{
       subject: payload.subject ?? 'SENTINEL Health Awareness Notice',
       bodyText: payload.bodyText ?? 'Changes from personal normal detected.',
       actionToken: payload.actionToken ?? 'ok',
-      pushSubscription: pushSub,
-    });
+    };
+
+    let res;
+    if (row.channel === 'web_push' && row.recipientUserId) {
+      const subs = await withSystemDb((tx) =>
+        tx
+          .select()
+          .from(pushSubscriptions)
+          .where(eq(pushSubscriptions.userId, row.recipientUserId!)),
+      );
+      if (subs.length === 0) {
+        res = await dispatchChannelDelivery({ ...baseDispatch, pushSubscription: null });
+      } else {
+        const subResults = await Promise.all(
+          subs.map(async (sub) => {
+            const subRes = await dispatchChannelDelivery({
+              ...baseDispatch,
+              pushSubscription: {
+                endpoint: sub.endpoint,
+                p256dh: sub.p256dh,
+                auth: sub.auth,
+              },
+            });
+            if (subRes.status === 'failed' && /404|410|unsubscribed|expired/i.test(subRes.error ?? '')) {
+              await withSystemDb((tx) =>
+                tx.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id)),
+              );
+            }
+            return subRes;
+          }),
+        );
+        const firstSuccess = subResults.find((r) => r.status === 'delivered');
+        res = firstSuccess ?? subResults[0]!;
+        if (firstSuccess && subResults.length > 1) {
+          const deliveredCount = subResults.filter((r) => r.status === 'delivered').length;
+          res = {
+            ...firstSuccess,
+            receipt: `vapid://${row.alertId} (${deliveredCount}/${subResults.length} devices)`,
+          };
+        }
+      }
+    } else {
+      res = await dispatchChannelDelivery({ ...baseDispatch, pushSubscription: null });
+    }
 
     if (res.status === 'delivered') delivered += 1;
     else if (res.status === 'captured_local') capturedLocal += 1;
@@ -782,4 +807,307 @@ export async function applyAlertAction(params: {
           : 'Alert acknowledged and logged.',
     updatedSensitivityOffset: updatedOffset,
   };
+}
+
+/**
+ * Creates a Step-1 clinical/support alert from a manual check-in ("I Don't Feel Well")
+ * or a voice red-flag/callback request, enqueues Step 1 multi-channel deliveries
+ * (patient + primary caregiver), processes the outbox immediately, and emits SSE.
+ */
+export async function triggerDirectCheckinAlert(params: {
+  patientId: string;
+  actorUserId?: string | null;
+  alertType: 'checkin_unwell' | 'voice_checkin_urgent';
+  level: 'warning' | 'urgent';
+  ruleKey: string;
+  summaryEn: string;
+  summaryKn: string;
+  summaryHi: string;
+  isSynthetic?: boolean;
+  now?: Date;
+}): Promise<{
+  alertId: string;
+  outboxStats: Awaited<ReturnType<typeof processOutboxBatch>>;
+}> {
+  const now = params.now ?? new Date();
+  const isSynthetic = Boolean(params.isSynthetic);
+  const nextDelayMin = escalationDelayMinutes(params.level, 2);
+  const nextEscalationAt = new Date(now.getTime() + nextDelayMin * 60_000);
+
+  const alertId = await withSystemDb(async (tx) => {
+    const [created] = await tx
+      .insert(alerts)
+      .values({
+        patientId: params.patientId,
+        alertType: params.alertType,
+        level: params.level,
+        ruleKey: params.ruleKey,
+        summaryEn: params.summaryEn,
+        summaryKn: params.summaryKn,
+        summaryHi: params.summaryHi,
+        status: 'open',
+        escalationStep: 1,
+        nextEscalationAt,
+        isSynthetic,
+      })
+      .returning({ id: alerts.id });
+
+    if (!created) throw new Error('Failed to create check-in alert row');
+
+    await tx.insert(jobQueue).values({
+      jobType: 'alert.escalate',
+      payload: { alertId: created.id, patientId: params.patientId, nextStep: 2 },
+      status: 'pending',
+      runAfter: nextEscalationAt,
+    });
+
+    await appendAuditLog(tx, {
+      actorUserId: params.actorUserId ?? null,
+      action: 'alert.created',
+      targetType: 'alert',
+      targetId: created.id,
+      payload: {
+        patientId: params.patientId,
+        alertType: params.alertType,
+        level: params.level,
+        isSynthetic,
+      },
+    });
+
+    return created.id;
+  });
+
+  const prefix = isSynthetic ? '[SYNTHETIC] ' : '';
+  const subject = `${prefix}Sachet - SENTINEL ${params.level.toUpperCase()} Caregiver Check-In Alert`;
+
+  await enqueueDeliveriesForAlertStep({
+    alertId,
+    patientId: params.patientId,
+    step: 1,
+    level: params.level,
+    subject,
+    bodyText: params.summaryEn,
+    isSynthetic,
+  });
+
+  const outboxStats = await processOutboxBatch(params.patientId);
+
+  publishPatientEvent({
+    type: 'alert.created',
+    patientId: params.patientId,
+    timestamp: now.toISOString(),
+    data: {
+      alertId,
+      level: params.level,
+      escalationStep: 1,
+      source: params.alertType,
+      isSynthetic,
+      outboxStats,
+    },
+  });
+
+  return { alertId, outboxStats };
+}
+
+const lastMaintenanceCheck = new Map<string, number>();
+
+/**
+ * Opportunistically advances overdue timed escalations (`nextEscalationAt <= now`)
+ * and processes pending outbox retries without requiring external cron jobs.
+ */
+export async function processDueEscalationsIfNeeded(patientId?: string): Promise<void> {
+  const key = patientId ?? '__all__';
+  const nowMs = Date.now();
+  const prev = lastMaintenanceCheck.get(key) ?? 0;
+  if (nowMs - prev < 15_000) return;
+  lastMaintenanceCheck.set(key, nowMs);
+
+  try {
+    const due = await withSystemDb((tx) => {
+      const conds = [
+        inArray(alerts.status, ['open', 'escalated']),
+        lte(alerts.nextEscalationAt, new Date(nowMs)),
+      ];
+      if (patientId) conds.push(eq(alerts.patientId, patientId));
+      return tx
+        .select({ id: alerts.id })
+        .from(alerts)
+        .where(and(...conds))
+        .limit(5);
+    });
+    if (due.length > 0) {
+      await escalateAlerts({ patientId });
+    } else if (patientId) {
+      await processOutboxBatch(patientId);
+    }
+  } catch {
+    // Non-fatal background maintenance check
+  }
+}
+
+export interface NotificationReadinessSummary {
+  patientId: string | null;
+  activeCaregivers: number;
+  pendingCaregivers: number;
+  userPushSubscriptions: number;
+  recipientPushSubscriptions: number;
+  channels: ChannelEnvReadiness;
+}
+
+/**
+ * Returns truthful live configuration & Care Circle recipient readiness for all alert channels.
+ */
+export async function getNotificationReadiness(params: {
+  userId: string;
+  patientId: string | null;
+}): Promise<NotificationReadinessSummary> {
+  const channels = resolveChannelEnvReadiness();
+
+  const dbStats = await withSystemDb(async (tx) => {
+    const userSubs = await tx
+      .select({ id: pushSubscriptions.id })
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.userId, params.userId));
+
+    if (!params.patientId) {
+      return {
+        activeCaregivers: 0,
+        pendingCaregivers: 0,
+        userPushSubscriptions: userSubs.length,
+        recipientPushSubscriptions: userSubs.length,
+      };
+    }
+
+    const [profile] = await tx
+      .select({ userId: patientProfiles.userId })
+      .from(patientProfiles)
+      .where(eq(patientProfiles.id, params.patientId))
+      .limit(1);
+
+    const members = await tx
+      .select({
+        memberUserId: careCircleMembers.memberUserId,
+        status: careCircleMembers.status,
+      })
+      .from(careCircleMembers)
+      .where(eq(careCircleMembers.patientId, params.patientId));
+
+    const grants = await tx
+      .select({ granteeUserId: consentGrants.granteeUserId, scopes: consentGrants.scopes })
+      .from(consentGrants)
+      .where(
+        and(eq(consentGrants.patientId, params.patientId), isNull(consentGrants.withdrawnAt)),
+      );
+    const alertConsented = new Set(
+      grants
+        .filter((g) => (g.scopes as string[]).includes('alerts_receive'))
+        .map((g) => g.granteeUserId),
+    );
+
+    const activeMemberUserIds = members
+      .filter((m) => m.status === 'active' && m.memberUserId && alertConsented.has(m.memberUserId))
+      .map((m) => m.memberUserId!);
+    const pendingCaregivers = members.filter((m) => m.status !== 'active').length;
+
+    const targetUsers = [...new Set([params.userId, ...(profile?.userId ? [profile.userId] : []), ...activeMemberUserIds])];
+    const recSubs =
+      targetUsers.length > 0
+        ? await tx
+            .select({ id: pushSubscriptions.id })
+            .from(pushSubscriptions)
+            .where(inArray(pushSubscriptions.userId, targetUsers))
+        : [];
+
+    return {
+      activeCaregivers: activeMemberUserIds.length,
+      pendingCaregivers,
+      userPushSubscriptions: userSubs.length,
+      recipientPushSubscriptions: recSubs.length,
+    };
+  });
+
+  return {
+    patientId: params.patientId,
+    ...dbStats,
+    channels,
+  };
+}
+
+/**
+ * Dispatches a direct verification message across Web Push, ntfy, and Email (if configured)
+ * without polluting clinical alert history.
+ */
+export async function sendTestAlertNotification(params: {
+  userId: string;
+  userEmail: string | null;
+  userName: string;
+  patientId: string | null;
+}): Promise<{
+  summary: string;
+  results: Array<{ channel: string; status: string; receipt: string | null; error: string | null }>;
+}> {
+  const nowIso = new Date().toISOString().slice(11, 19);
+  const subject = 'Sachet - SENTINEL Caregiver Alert Test';
+  const bodyText = `Verification push triggered by ${params.userName} at ${nowIso} UTC. Active caregiver channels are ready.`;
+
+  const subs = await withSystemDb((tx) =>
+    tx.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, params.userId)),
+  );
+
+  const results: Array<{ channel: string; status: string; receipt: string | null; error: string | null }> = [];
+
+  if (subs.length > 0) {
+    for (const sub of subs) {
+      const r = await dispatchChannelDelivery({
+        channel: 'web_push',
+        alertId: 'test-notification',
+        recipientEmail: params.userEmail,
+        recipientName: params.userName,
+        subject,
+        bodyText,
+        actionToken: 'test',
+        pushSubscription: { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+      });
+      results.push({ channel: 'web_push', ...r });
+    }
+  } else {
+    results.push({
+      channel: 'web_push',
+      status: 'not_subscribed',
+      receipt: null,
+      error: 'Click "Enable Browser Push Alerts" first on this browser.',
+    });
+  }
+
+  const ntfyRes = await dispatchChannelDelivery({
+    channel: 'ntfy',
+    alertId: 'test-notification',
+    recipientEmail: params.userEmail,
+    recipientName: params.userName,
+    subject,
+    bodyText,
+    actionToken: 'test',
+  });
+  results.push({ channel: 'ntfy', ...ntfyRes });
+
+  if (process.env.RESEND_API_KEY && params.userEmail) {
+    const emailRes = await dispatchChannelDelivery({
+      channel: 'email',
+      alertId: 'test-notification',
+      recipientEmail: params.userEmail,
+      recipientName: params.userName,
+      subject,
+      bodyText,
+      actionToken: 'test',
+    });
+    results.push({ channel: 'email', ...emailRes });
+  }
+
+  const deliveredChannels = results.filter((r) => r.status === 'delivered').map((r) => r.channel);
+  const summary =
+    deliveredChannels.length > 0
+      ? `Delivered test notification via: ${[...new Set(deliveredChannels)].join(', ')}.`
+      : 'No external push/ntfy endpoint delivered — enable Browser Push on this device or check NTFY_TOPIC_URL / RESEND_API_KEY.';
+
+  return { summary, results };
 }

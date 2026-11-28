@@ -171,9 +171,10 @@ export async function dispatchChannelDelivery(
         };
       }
       try {
+        const safeTitle = input.subject.replace(/[^\x20-\x7E]/g, '-').slice(0, 160);
         const resp = await fetch(`${baseUrl.replace(/\/$/, '')}/${encodeURIComponent(topic)}`, {
           method: 'POST',
-          headers: { Title: input.subject },
+          headers: { Title: safeTitle, Priority: 'high' },
           body: input.bodyText,
           signal: AbortSignal.timeout(4000),
         });

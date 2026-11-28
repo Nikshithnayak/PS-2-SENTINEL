@@ -20,6 +20,7 @@ import {
 import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { StatusBadge, SyntheticBadge } from '@/components/health/status-badge';
+import { NotificationSetupCard } from '@/components/alerts/notification-setup-card';
 import { SentinelShell } from '@/components/sentinel-shell';
 
 interface CohortRow {
@@ -112,6 +113,7 @@ export default function CaregiverConsolePage() {
   const detailQuery = useQuery<CaregiverDashboardData>({
     queryKey: ['dashboard-patient', activePatientId],
     enabled: Boolean(activePatientId),
+    refetchInterval: 20_000,
     queryFn: async () => {
       const res = await fetch(`/api/v1/dashboard/patient?patientId=${activePatientId}`);
       if (!res.ok) throw new Error(`${res.status}`);
@@ -282,6 +284,8 @@ export default function CaregiverConsolePage() {
               </div>
               )}
             </section>
+
+            <NotificationSetupCard patientId={activePatientId} />
 
             {detailQuery.data && (
               <>

@@ -111,6 +111,7 @@ export const IngestBatchSchema = z.object({
   patientId: z.string().uuid(),
   idempotencyKey: z.string().min(8).max(128).optional(),
   timezone: z.string().min(1).max(64).default('Asia/Kolkata'),
+  evaluate: z.boolean().optional(),
   samples: z.array(VitalSampleInputSchema).min(1).max(5000),
 });
 export type IngestBatch = z.infer<typeof IngestBatchSchema>;

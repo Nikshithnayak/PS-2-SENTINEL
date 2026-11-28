@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { appendAuditLog, withSystemDb } from '@/db';
 import { checkinEvents, patientProfiles } from '@/db/schema';
 import { publishPatientEvent } from '@/lib/alerts/events';
+import { triggerDirectCheckinAlert } from '@/lib/alerts/outbox';
 import { getAccessiblePatientIds } from '@/lib/dashboard/queries';
 import { checkPatientScope, requireSession } from '@/lib/session';
 
@@ -100,12 +101,33 @@ export async function POST(request: NextRequest) {
     return row;
   });
 
-  publishPatientEvent({
-    type: 'engine.evaluated',
-    patientId,
-    timestamp: new Date().toISOString(),
-    data: { checkinId: created?.id, kind: parsed.data.kind, severity: parsed.data.severity },
-  });
+  let triggeredAlertId: string | null = null;
+  if (parsed.data.kind === 'tap_unwell') {
+    const symptomLabel =
+      parsed.data.symptoms.length > 0
+        ? parsed.data.symptoms.join(', ')
+        : 'asked for caregiver support';
+    const level = parsed.data.severity === 'severe' ? 'urgent' : 'warning';
+    const alertRes = await triggerDirectCheckinAlert({
+      patientId,
+      actorUserId: ctx.userId,
+      alertType: 'checkin_unwell',
+      level,
+      ruleKey: `checkin:tap_unwell:${parsed.data.symptoms.join('+') || 'support'}`,
+      summaryEn: `Patient tapped "I Don't Feel Well" (${symptomLabel}). Please check in with your loved one now.`,
+      summaryKn: `ರೋಗಿಯು "ನನಗೆ ಸರಿಯಿಲ್ಲ" ಎಂದು ತಿಳಿಸಿದ್ದಾರೆ (${symptomLabel}). ದಯವಿಟ್ಟು ತಕ್ಷಣ ವಿಚಾರಿಸಿ.`,
+      summaryHi: `मरीज़ ने "मेरी तबीयत ठीक नहीं है" दबाया है (${symptomLabel}). कृपया तुरंत संपर्क करें।`,
+      isSynthetic: parsed.data.isSynthetic,
+    });
+    triggeredAlertId = alertRes.alertId;
+  } else {
+    publishPatientEvent({
+      type: 'engine.evaluated',
+      patientId,
+      timestamp: new Date().toISOString(),
+      data: { checkinId: created?.id, kind: parsed.data.kind, severity: parsed.data.severity },
+    });
+  }
 
-  return NextResponse.json({ checkin: created }, { status: 201 });
+  return NextResponse.json({ checkin: created, triggeredAlertId }, { status: 201 });
 }

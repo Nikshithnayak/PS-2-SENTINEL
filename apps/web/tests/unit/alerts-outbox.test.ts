@@ -7,13 +7,17 @@ import {
   alerts,
   jobQueue,
   patientProfiles,
+  pushSubscriptions,
   riskAssessments,
 } from '@/db/schema';
 import { SEED_IDS, seedDatabase } from '@/db/seed';
 import {
   applyAlertAction,
   escalateAlerts,
+  getNotificationReadiness,
   maybeTriggerAlertFromEvaluation,
+  processDueEscalationsIfNeeded,
+  triggerDirectCheckinAlert,
 } from '@/lib/alerts/outbox';
 import {
   computeBoundedSensitivityUpdate,
@@ -337,5 +341,87 @@ describe('Phase 4 Anti-Fatigue Policy, Escalation Ladder & Transactional Outbox'
         CLOUDFLARE_INBOX_WEBHOOK_SECRET: 'cf-secret-1',
       } as unknown as NodeJS.ProcessEnv),
     ).toBe('cf-secret-1');
+  });
+
+  it('triggers caregiver alerts on direct check-ins, fans out multi-device push, routes ntfy/push on Step 2, and advances overdue escalations', async () => {
+    const direct = await triggerDirectCheckinAlert({
+      patientId: SEED_IDS.patientProfileId,
+      actorUserId: SEED_IDS.patientUserId,
+      alertType: 'checkin_unwell',
+      level: 'warning',
+      ruleKey: 'checkin:tap_unwell:dizziness',
+      summaryEn: 'Patient tapped I Dont Feel Well (dizziness). Please check in now.',
+      summaryKn: 'ದಯವಿಟ್ಟು ತಕ್ಷಣ ವಿಚಾರಿಸಿ.',
+      summaryHi: 'कृपया तुरंत संपर्क करें।',
+      isSynthetic: false,
+      now: new Date('2026-11-28T06:00:00.000Z'),
+    });
+    expect(direct.alertId).toBeTruthy();
+
+    // Verify Step 1 Primary Caregiver deliveries were enqueued & processed cleanly
+    const step1Deliveries = await withSystemDb((tx) =>
+      tx.select().from(alertDeliveries).where(eq(alertDeliveries.alertId, direct.alertId)),
+    );
+    expect(
+      step1Deliveries.some(
+        (d) =>
+          d.recipientUserId === SEED_IDS.caregiverUserId &&
+          d.channel === 'in_app' &&
+          d.status === 'delivered',
+      ),
+    ).toBe(true);
+    expect(
+      step1Deliveries.some(
+        (d) => d.recipientUserId === SEED_IDS.caregiverUserId && d.channel === 'ntfy',
+      ),
+    ).toBe(true);
+
+    // Backdate nextEscalationAt so opportunistic maintenance advances Step 1 -> Step 2 with web_push + ntfy
+    await withSystemDb((tx) =>
+      tx
+        .update(alerts)
+        .set({ nextEscalationAt: new Date(Date.now() - 60_000) })
+        .where(eq(alerts.id, direct.alertId)),
+    );
+    await processDueEscalationsIfNeeded(SEED_IDS.patientProfileId);
+
+    const updatedAlert = await withSystemDb((tx) =>
+      tx.select().from(alerts).where(eq(alerts.id, direct.alertId)).limit(1),
+    );
+    expect(updatedAlert[0]?.escalationStep).toBe(2);
+    expect(updatedAlert[0]?.status).toBe('escalated');
+
+    const step2Deliveries = await withSystemDb((tx) =>
+      tx.select().from(alertDeliveries).where(eq(alertDeliveries.alertId, direct.alertId)),
+    );
+    expect(
+      step2Deliveries.some(
+        (d) => d.idempotencyKey.endsWith(':web_push:step2') && d.channel === 'web_push',
+      ),
+    ).toBe(true);
+    expect(
+      step2Deliveries.some(
+        (d) => d.idempotencyKey.endsWith(':ntfy:step2') && d.channel === 'ntfy',
+      ),
+    ).toBe(true);
+
+    // Register caregiver push subscription & check readiness summary accurately counts it
+    await withSystemDb((tx) =>
+      tx.insert(pushSubscriptions).values({
+        userId: SEED_IDS.caregiverUserId,
+        endpoint: 'https://fcm.googleapis.com/fcm/send/fake-caregiver-endpoint-unit',
+        p256dh: 'unit-test-p256dh-key-123456',
+        auth: 'unit-test-auth',
+      }),
+    );
+
+    const readiness = await getNotificationReadiness({
+      userId: SEED_IDS.caregiverUserId,
+      patientId: SEED_IDS.patientProfileId,
+    });
+    expect(readiness.activeCaregivers).toBeGreaterThanOrEqual(1);
+    expect(readiness.userPushSubscriptions).toBeGreaterThanOrEqual(1);
+    expect(readiness.recipientPushSubscriptions).toBeGreaterThanOrEqual(1);
+    expect(readiness.channels.inApp.configured).toBe(true);
   });
 });
