@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { runTsCausalBenchmarkFallback } from '@/lib/engine/benchmark-fallback';
 import { requireSession } from '@/lib/session';
 
 const BenchmarkBodySchema = z.object({
@@ -18,25 +19,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid benchmark configuration' }, { status: 400 });
   }
 
-  const engineUrl = process.env.ENGINE_URL ?? 'http://127.0.0.1:8000';
-  try {
-    const resp = await fetch(`${engineUrl}/v1/eval/benchmark`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(parsed.data),
-      signal: AbortSignal.timeout(75_000),
-    });
-    if (!resp.ok) {
-      return NextResponse.json({ error: 'Python engine benchmark failed' }, { status: 502 });
+  const engineUrl = process.env.ENGINE_URL?.trim();
+  const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+
+  if (engineUrl || !isVercel) {
+    const targetUrl = engineUrl || 'http://127.0.0.1:8000';
+    try {
+      const resp = await fetch(`${targetUrl}/v1/eval/benchmark`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(parsed.data),
+        signal: AbortSignal.timeout(75_000),
+      });
+      if (resp.ok) {
+        const body = await resp.json();
+        return NextResponse.json(body);
+      }
+    } catch {
+      // Fall through to deterministic TypeScript walk-forward benchmark fallback
     }
-    const body = await resp.json();
-    return NextResponse.json(body);
-  } catch {
-    return NextResponse.json(
-      {
-        error: 'Python detection engine is offline. Start services/engine to run full walk-forward ablations.',
-      },
-      { status: 503 },
-    );
   }
+
+  const fallbackResult = runTsCausalBenchmarkFallback(parsed.data);
+  return NextResponse.json(fallbackResult);
 }

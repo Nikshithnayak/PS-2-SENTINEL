@@ -13,7 +13,10 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import { cleanSpokenTranscript } from '@/lib/voice/transcript-cleaner';
+import {
+  cleanSpokenTranscript,
+  isWhisperHallucination,
+} from '@/lib/voice/transcript-cleaner';
 
 interface VoiceCheckinProps {
   patientId?: string;
@@ -125,7 +128,18 @@ async function decodeBlobToMono16k(blob: Blob): Promise<Float32Array> {
   const audioCtx = new AudioCtx({ sampleRate: 16000 });
   try {
     const decoded = await audioCtx.decodeAudioData(arrayBuffer);
-    return new Float32Array(decoded.getChannelData(0));
+    const channelCount = Math.max(1, decoded.numberOfChannels);
+    if (channelCount === 1) {
+      return new Float32Array(decoded.getChannelData(0));
+    }
+    const mono = new Float32Array(decoded.length);
+    for (let ch = 0; ch < channelCount; ch += 1) {
+      const data = decoded.getChannelData(ch);
+      for (let i = 0; i < decoded.length; i += 1) {
+        mono[i] = (mono[i] ?? 0) + (data[i] ?? 0) / channelCount;
+      }
+    }
+    return mono;
   } finally {
     await audioCtx.close().catch(() => { });
   }
@@ -352,11 +366,14 @@ export function VoiceCheckinCompanion({
         if (srvRes.ok) {
           const srvJson = (await srvRes.json()) as { text?: string };
           const cleaned = cleanSpokenTranscript(srvJson.text ?? '');
-          if (cleaned) {
+          if (cleaned && !isWhisperHallucination(cleaned)) {
             setVoiceHint(`Transcribed: "${cleaned}"`);
             await submitVoiceText(cleaned);
             return;
           }
+          setVoiceError('No clear speech detected in that pause. Tap Speak and speak clearly.');
+          setVoiceHint(null);
+          return;
         }
       }
 
@@ -378,8 +395,8 @@ export function VoiceCheckinCompanion({
       });
 
       const cleaned = cleanSpokenTranscript(rawText);
-      if (!cleaned) {
-        setVoiceError('No clear speech detected in that clip. Tap Speak and try again.');
+      if (!cleaned || isWhisperHallucination(cleaned)) {
+        setVoiceError('No clear speech detected in that pause. Tap Speak and speak clearly.');
         setVoiceHint(null);
         return;
       }
@@ -472,7 +489,7 @@ export function VoiceCheckinCompanion({
         setAudioLevels(bars);
 
         const avgEnergy = energySum / BAR_INDICES.length;
-        if (avgEnergy > 0.09) {
+        if (avgEnergy > 0.035) {
           heardSpeech = true;
           silenceStartedAt = null;
         } else if (heardSpeech) {
@@ -594,7 +611,7 @@ export function VoiceCheckinCompanion({
         recognitionRef.current = null;
         const spokenRaw = (capturedFinalRef.current || latestInterimRef.current).trim();
         const cleaned = cleanSpokenTranscript(spokenRaw);
-        if (cleaned && !manualStopRef.current) {
+        if (cleaned && !isWhisperHallucination(cleaned) && !manualStopRef.current) {
           setVoiceHint(`Heard "${cleaned}" — replying...`);
           void submitVoiceText(cleaned);
         }

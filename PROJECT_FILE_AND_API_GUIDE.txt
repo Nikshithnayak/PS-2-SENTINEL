@@ -240,7 +240,7 @@ Engine, Alerts, Escalation, Webhooks & Emergency Routes:
       Auth: requireSession + checkPatientScope('vitals_read')
       Lib/Engine: runAndPersistEvaluation() (calls Python `${ENGINE_URL}/v1/score/evaluate` or TS fallback), persists baseline_states, risk_assessments, detector_decision_logs, audit_logs, then runs maybeTriggerAlertFromEvaluation().
   - POST /api/v1/engine/benchmark        (apps/web/src/app/api/v1/engine/benchmark/route.ts)
-      Auth: requireSession; proxies to Python `${ENGINE_URL}/v1/eval/benchmark`.
+      Auth: requireSession; proxies to Python `${ENGINE_URL}/v1/eval/benchmark` or runs `lib/engine/benchmark-fallback.ts` on Vercel.
   - GET /api/v1/datasets                 (apps/web/src/app/api/v1/datasets/route.ts)
       Auth: requireSession; proxies to Python `${ENGINE_URL}/v1/datasets` (PMData, LifeSnaps, WESAD, MMASH).
   - GET, DELETE /api/v1/alerts           (apps/web/src/app/api/v1/alerts/route.ts)
@@ -310,6 +310,8 @@ Internal Python Modules:
   - sim/generator.py                     -> Synthetic physiological trajectory generator (`early_infection`, COPD, exercise, silence, etc.).
 
 ================================================================================
+
+
 5. SHARED LIBRARIES, WORKERS & MIDDLEWARE SUMMARY
 ================================================================================
 Packages & Root Files:

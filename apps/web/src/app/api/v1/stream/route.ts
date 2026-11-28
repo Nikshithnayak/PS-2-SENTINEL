@@ -38,15 +38,37 @@ export async function GET(request: NextRequest) {
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      let closed = false;
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(keepalive);
+        clearTimeout(gracefulCloseTimer);
+        unsubscribe();
+        try {
+          controller.close();
+        } catch {
+          // Already closed
+        }
+      };
+
       const send = (event: string, data: unknown) => {
+        if (closed) return;
         try {
           controller.enqueue(
             encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
           );
         } catch {
-          // Stream closed
+          cleanup();
         }
       };
+
+      // Hint browser EventSource to reconnect cleanly after graceful serverless rotation
+      try {
+        controller.enqueue(encoder.encode('retry: 2000\n\n'));
+      } catch {
+        // Ignore
+      }
 
       send('connected', { patientId: targetPatientId, timestamp: new Date().toISOString() });
 
@@ -55,22 +77,20 @@ export async function GET(request: NextRequest) {
       });
 
       const keepalive = setInterval(() => {
+        if (closed) return;
         try {
           controller.enqueue(encoder.encode(': heartbeat\n\n'));
         } catch {
-          clearInterval(keepalive);
+          cleanup();
         }
       }, 15_000);
 
-      request.signal.addEventListener('abort', () => {
-        clearInterval(keepalive);
-        unsubscribe();
-        try {
-          controller.close();
-        } catch {
-          // Already closed
-        }
-      });
+      // Rotate stream cleanly before Vercel's serverless timeout (300s) so EventSource reconnects without 5xx logs
+      const gracefulCloseTimer = setTimeout(() => {
+        cleanup();
+      }, 45_000);
+
+      request.signal.addEventListener('abort', cleanup);
     },
   });
 

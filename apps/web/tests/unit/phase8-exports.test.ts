@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SEED_IDS } from '@/db/seed';
+import { runTsCausalBenchmarkFallback } from '@/lib/engine/benchmark-fallback';
 import { buildFhirR4Bundle, pseudonymizeId } from '@/lib/exports/fhir';
 
 describe('Phase 8 Clinical FHIR R4 & De-Identified Cohort Exports', () => {
@@ -53,5 +54,16 @@ describe('Phase 8 Clinical FHIR R4 & De-Identified Cohort Exports', () => {
     expect(p1).toBe(p2);
     expect(p1).toMatch(/^COH-[A-F0-9]{12}$/);
     expect(p1).not.toContain(SEED_IDS.patientProfileId.slice(0, 6));
+  });
+
+  it('computes causal walk-forward ablation benchmark fallback across all 11 scenarios', () => {
+    const res = runTsCausalBenchmarkFallback({ seeds: [42], totalDays: 16, includeAblations: true });
+    expect(res.scenarioCount).toBe(11);
+    expect(res.isSynthetic).toBe(true);
+    expect(res.ablations.L1_L2_L3_full?.sensitivity).toBeGreaterThan(0.7);
+    expect(res.ablations.L1_L2_L3_full?.specificity).toBeGreaterThanOrEqual(0.5);
+    expect(res.scenarios.some((s) => s.scenario === 'copd_exacerbation' && s.detectedFull)).toBe(
+      true,
+    );
   });
 });

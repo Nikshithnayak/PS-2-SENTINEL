@@ -2,11 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const CSP_HEADER = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https://lh3.googleusercontent.com",
-  "connect-src 'self' ws: wss: https://api.open-meteo.com https://air-quality-api.open-meteo.com https://nominatim.openstreetmap.org https://overpass-api.de https://rxnav.nlm.nih.gov https://api.fda.gov",
+  "connect-src 'self' ws: wss: https://api.open-meteo.com https://air-quality-api.open-meteo.com https://nominatim.openstreetmap.org https://overpass-api.de https://rxnav.nlm.nih.gov https://api.fda.gov https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
