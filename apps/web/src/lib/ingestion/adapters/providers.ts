@@ -181,56 +181,66 @@ export class GoogleFitAdapter implements ProviderAdapter {
       context: ActivityContext;
       bucketMillis: number;
     }> = [
-      {
-        dataTypeName: 'com.google.heart_rate.bpm',
-        metricType: 'heart_rate',
-        unit: 'bpm',
-        context: 'rest',
-        bucketMillis: 3600_000,
-      },
-      {
-        dataTypeName: 'com.google.step_count.delta',
-        metricType: 'steps',
-        unit: 'count',
-        context: 'light_activity',
-        bucketMillis: 3600_000,
-      },
-      {
-        dataTypeName: 'com.google.oxygen_saturation',
-        metricType: 'spo2',
-        unit: '%',
-        context: 'rest',
-        bucketMillis: 3600_000,
-      },
-      {
-        dataTypeName: 'com.google.body.temperature',
-        metricType: 'body_temperature',
-        unit: 'degC',
-        context: 'unknown',
-        bucketMillis: 3600_000,
-      },
-      {
-        dataTypeName: 'com.google.blood_pressure',
-        metricType: 'systolic_bp',
-        unit: 'mmHg',
-        context: 'rest',
-        bucketMillis: 3600_000,
-      },
-      {
-        dataTypeName: 'com.google.blood_glucose',
-        metricType: 'blood_glucose',
-        unit: 'mmol/L',
-        context: 'unknown',
-        bucketMillis: 3600_000,
-      },
-      {
-        dataTypeName: 'com.google.sleep.segment',
-        metricType: 'sleep_duration_min',
-        unit: 'min',
-        context: 'sleep',
-        bucketMillis: 86_400_000,
-      },
-    ];
+        {
+          dataTypeName: 'com.google.heart_rate.bpm',
+          metricType: 'heart_rate',
+          unit: 'bpm',
+          context: 'rest',
+          bucketMillis: 3600_000,
+        },
+        {
+          dataTypeName: 'com.google.step_count.delta',
+          metricType: 'steps',
+          unit: 'count',
+          context: 'light_activity',
+          bucketMillis: 3600_000,
+        },
+        {
+          dataTypeName: 'com.google.oxygen_saturation',
+          metricType: 'spo2',
+          unit: '%',
+          context: 'rest',
+          bucketMillis: 3600_000,
+        },
+        {
+          dataTypeName: 'com.google.body.temperature',
+          metricType: 'body_temperature',
+          unit: 'degC',
+          context: 'unknown',
+          bucketMillis: 3600_000,
+        },
+        {
+          dataTypeName: 'com.google.blood_pressure',
+          metricType: 'systolic_bp',
+          unit: 'mmHg',
+          context: 'rest',
+          bucketMillis: 3600_000,
+        },
+        {
+          dataTypeName: 'com.google.blood_glucose',
+          metricType: 'blood_glucose',
+          unit: 'mmol/L',
+          context: 'unknown',
+          bucketMillis: 3600_000,
+        },
+        {
+          dataTypeName: 'com.google.sleep.segment',
+          metricType: 'sleep_duration_min',
+          unit: 'min',
+          context: 'sleep',
+          bucketMillis: 86_400_000,
+        },
+      ];
+
+    const summaryHrSpec = {
+      dataTypeName: 'com.google.heart_rate.summary',
+      metricType: 'heart_rate' as MetricType,
+      unit: 'bpm',
+      context: 'rest' as ActivityContext,
+      bucketMillis: 3600_000,
+    };
+
+    const allFallbackSpecs = [...specs, summaryHrSpec];
 
     const out: VitalSampleInput[] = [];
     const seenMetrics = new Set<MetricType>();
@@ -442,10 +452,24 @@ export class GoogleFitAdapter implements ProviderAdapter {
       extractSpecBuckets(r.spec, r.buckets);
     }
 
-    // Fallback: if core metrics (HR / Steps / SpO2 / Sleep) had no default merged datasource,
-    // query explicit registered dataSources (via dataSourceId aggregate, then direct dataset range)
-    // BEFORE sleep session gap-fill so granular sleep stages take priority over coarse sessions.
-    if (!seenMetrics.has('heart_rate') || !seenMetrics.has('steps') || !seenMetrics.has('spo2')) {
+    // Fallback 0: Check com.google.heart_rate.summary if standard bpm returned empty buckets
+    if (!seenMetrics.has('heart_rate')) {
+      const hrSummaryAgg = await queryAggregate({ dataTypeName: 'com.google.heart_rate.summary' }, 3600_000);
+      if (hrSummaryAgg.buckets) {
+        succeededCount++;
+        extractSpecBuckets(summaryHrSpec, hrSummaryAgg.buckets);
+      }
+    }
+
+    // Fallback 1: if core metrics (HR / Steps / SpO2 / Sleep) had no default merged datasource,
+    // query explicit registered dataSources BEFORE sleep session gap-fill so granular sleep stages
+    // (including sleep_efficiency) take priority over coarse sessions.
+    if (
+      !seenMetrics.has('heart_rate') ||
+      !seenMetrics.has('steps') ||
+      !seenMetrics.has('spo2') ||
+      !seenMetrics.has('sleep_duration_min')
+    ) {
       const dsRes = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataSources', {
         headers: { Authorization: `Bearer ${params.accessToken}` },
         signal: AbortSignal.timeout(8000),
@@ -453,28 +477,34 @@ export class GoogleFitAdapter implements ProviderAdapter {
         .then(async (r) =>
           r.ok
             ? ((await r.json()) as {
-                dataSource?: Array<{
-                  dataStreamId?: string;
-                  dataType?: { name?: string };
-                }>;
-              })
+              dataSource?: Array<{
+                dataStreamId?: string;
+                dataType?: { name?: string };
+              }>;
+            })
             : null,
         )
         .catch(() => null);
 
+      const priorityRank = (metric: MetricType): number =>
+        metric === 'heart_rate' ? 0 : metric === 'spo2' ? 1 : metric === 'sleep_duration_min' ? 2 : 3;
+
       const fallbackStreams = (dsRes?.dataSource ?? [])
         .filter((ds) => ds.dataStreamId && ds.dataType?.name)
-        .filter((ds) => {
-          const spec = specs.find((s) => s.dataTypeName === ds.dataType?.name);
-          return Boolean(spec && !seenMetrics.has(spec.metricType));
-        })
-        .slice(0, 8);
+        .map((ds) => ({
+          ds,
+          spec: allFallbackSpecs.find((s) => s.dataTypeName === ds.dataType?.name),
+        }))
+        .filter(
+          (item): item is { ds: { dataStreamId: string; dataType: { name: string } }; spec: (typeof allFallbackSpecs)[number] } =>
+            Boolean(item.spec && !seenMetrics.has(item.spec.metricType)),
+        )
+        .sort((a, b) => priorityRank(a.spec.metricType) - priorityRank(b.spec.metricType))
+        .slice(0, 24);
 
       if (fallbackStreams.length > 0) {
         await Promise.all(
-          fallbackStreams.map(async (ds) => {
-            const spec = specs.find((s) => s.dataTypeName === ds.dataType?.name);
-            if (!spec || !ds.dataStreamId) return;
+          fallbackStreams.map(async ({ ds, spec }) => {
             const agg = await queryAggregate({ dataSourceId: ds.dataStreamId }, spec.bucketMillis);
             const hasPoints =
               agg.buckets?.some((b) => (b.dataset ?? []).some((d) => (d.point ?? []).length > 0)) ??
@@ -484,31 +514,55 @@ export class GoogleFitAdapter implements ProviderAdapter {
               extractSpecBuckets(spec, agg.buckets);
               return;
             }
-            const dsDatasetUrl = `https://www.googleapis.com/fitness/v1/users/me/dataSources/${encodeURIComponent(ds.dataStreamId)}/datasets/${Math.trunc(startMs)}000000-${Math.trunc(endMs)}000000`;
-            const rawRes = await fetch(dsDatasetUrl, {
-              headers: { Authorization: `Bearer ${params.accessToken}` },
-              signal: AbortSignal.timeout(8000),
-            })
-              .then(async (r) =>
-                r.ok
-                  ? ((await r.json()) as {
-                      point?: Array<{
-                        startTimeNanos?: string;
-                        endTimeNanos?: string;
-                        originDataSourceId?: string;
-                        value?: Array<{ fpVal?: number; intVal?: number }>;
-                      }>;
-                    })
-                  : null,
-              )
-              .catch(() => null);
-            if (rawRes?.point && rawRes.point.length > 0) {
+            const dsDatasetUrl = `https://www.googleapis.com/fitness/v1/users/me/dataSources/${encodeURIComponent(ds.dataStreamId)}/datasets/${Math.trunc(startMs)}000000-${Math.trunc(endMs)}000000?limit=1000`;
+            const collectedPoints: Array<{
+              startTimeNanos?: string;
+              endTimeNanos?: string;
+              originDataSourceId?: string;
+              value?: Array<{ fpVal?: number; intVal?: number }>;
+            }> = [];
+            let nextUrl: string | null = dsDatasetUrl;
+            for (let page = 0; page < 2 && nextUrl; page += 1) {
+              const rawRes = (await fetch(nextUrl, {
+                headers: { Authorization: `Bearer ${params.accessToken}` },
+                signal: AbortSignal.timeout(8000),
+              })
+                .then(async (r) =>
+                  r.ok
+                    ? ((await r.json()) as {
+                        nextPageToken?: string;
+                        point?: Array<{
+                          startTimeNanos?: string;
+                          endTimeNanos?: string;
+                          originDataSourceId?: string;
+                          value?: Array<{ fpVal?: number; intVal?: number }>;
+                        }>;
+                      })
+                    : null,
+                )
+                .catch(() => null)) as {
+                nextPageToken?: string;
+                point?: Array<{
+                  startTimeNanos?: string;
+                  endTimeNanos?: string;
+                  originDataSourceId?: string;
+                  value?: Array<{ fpVal?: number; intVal?: number }>;
+                }>;
+              } | null;
+              if (rawRes?.point?.length) {
+                collectedPoints.push(...rawRes.point);
+              }
+              nextUrl = rawRes?.nextPageToken
+                ? `${dsDatasetUrl}&pageToken=${encodeURIComponent(rawRes.nextPageToken)}`
+                : null;
+            }
+            if (collectedPoints.length > 0) {
               succeededCount++;
               extractSpecBuckets(spec, [
                 {
                   startTimeMillis: String(Math.trunc(startMs)),
                   endTimeMillis: String(Math.trunc(endMs)),
-                  dataset: [{ dataSourceId: ds.dataStreamId, point: rawRes.point }],
+                  dataset: [{ dataSourceId: ds.dataStreamId, point: collectedPoints }],
                 },
               ]);
             }
@@ -518,7 +572,7 @@ export class GoogleFitAdapter implements ProviderAdapter {
     }
 
     // Extract sleep duration from Google Fit Sleep Sessions (activityType=72) used by Health Connect, Fitbit, Noise & Samsung sync
-    // whenever granular sleep.segment data did not already cover that night.
+    // for any nights not already covered by granular sleep.segment data.
     for (const s of sleepSessionsRes?.session ?? []) {
       const sMs = Number(s.startTimeMillis);
       const eMs = Number(s.endTimeMillis);
@@ -604,27 +658,27 @@ export class GoogleHealthAdapter implements ProviderAdapter {
       unit: string;
       context: ActivityContext;
     }> = [
-      { apiType: 'heart-rate', metric: 'heart_rate', unit: 'bpm', context: 'rest' },
-      {
-        apiType: 'daily-resting-heart-rate',
-        metric: 'resting_heart_rate',
-        unit: 'bpm',
-        context: 'sleep',
-      },
-      {
-        apiType: 'heart-rate-variability',
-        metric: 'hrv_rmssd',
-        unit: 'ms',
-        context: 'sleep',
-      },
-      { apiType: 'oxygen-saturation', metric: 'spo2', unit: '%', context: 'rest' },
-      {
-        apiType: 'respiratory-rate',
-        metric: 'respiratory_rate',
-        unit: 'breaths/min',
-        context: 'rest',
-      },
-    ];
+        { apiType: 'heart-rate', metric: 'heart_rate', unit: 'bpm', context: 'rest' },
+        {
+          apiType: 'daily-resting-heart-rate',
+          metric: 'resting_heart_rate',
+          unit: 'bpm',
+          context: 'sleep',
+        },
+        {
+          apiType: 'heart-rate-variability',
+          metric: 'hrv_rmssd',
+          unit: 'ms',
+          context: 'sleep',
+        },
+        { apiType: 'oxygen-saturation', metric: 'spo2', unit: '%', context: 'rest' },
+        {
+          apiType: 'respiratory-rate',
+          metric: 'respiratory_rate',
+          unit: 'breaths/min',
+          context: 'rest',
+        },
+      ];
 
     const out: VitalSampleInput[] = [];
     let apiErrorMessage: string | null = null;

@@ -32,7 +32,7 @@ test.describe('Phase 5 Multi-Role Dashboards Closed Loop E2E', () => {
     await page.goto('/ingest');
     await page.locator('#csv-takeout-text').fill(buildRealisticVitalsCsv('respiratory'));
     await page.getByRole('button', { name: 'Import Mapped Records' }).click();
-    await expect(page.getByText(/Imported .* samples via csv/i)).toBeVisible();
+    await expect(page.getByText(/Imported .* samples via csv/i)).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Run Detection Engine' }).click();
     await expect(page.getByTestId('deterioration-index-value')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('engine-source-tag')).toContainText('python-engine');

@@ -148,6 +148,15 @@ export async function handleGoogleConnectorCallback(request: NextRequest) {
       );
     }
 
+    const metricCounts: Record<string, number> = {};
+    for (const s of samples) {
+      metricCounts[s.metricType] = (metricCounts[s.metricType] ?? 0) + 1;
+    }
+    const breakdownLabel = Object.entries(metricCounts)
+      .map(([m, c]) => `${m}: ${c}`)
+      .join(', ');
+    const hrCount = (metricCounts.heart_rate ?? 0) + (metricCounts.resting_heart_rate ?? 0);
+
     const ingested = await ingestVitalBatch({
       patientId: parsedCookie.patientId,
       source: parsedCookie.mode,
@@ -167,9 +176,19 @@ export async function handleGoogleConnectorCallback(request: NextRequest) {
       });
     }
 
-    return redirectWithClear(
-      `${origin}/ingest?connector=${parsedCookie.mode}&synced=${ingested.recordsAccepted}`,
-    );
+    const extraParams = new URLSearchParams({
+      connector: parsedCookie.mode,
+      synced: String(ingested.recordsAccepted),
+    });
+    if (breakdownLabel) extraParams.set('synced_summary', breakdownLabel);
+    if (parsedCookie.mode === 'google_fit' && hrCount === 0) {
+      extraParams.set(
+        'connector_warning',
+        `Google Fit returned ${ingested.recordsAccepted} sample(s) (${breakdownLabel}), but 0 Heart Rate readings in the last 14 days. Verify Heart Rate sync inside Google Fit / Health Connect or pair Android Health Connect Direct Bridge.`,
+      );
+    }
+
+    return redirectWithClear(`${origin}/ingest?${extraParams.toString()}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Connected, but initial Google sync returned an error.';
     return redirectWithClear(

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import Link from 'next/link';
 import * as echarts from 'echarts';
 import { SyntheticBadge } from '@/components/health/status-badge';
 
@@ -31,6 +32,7 @@ export interface VitalsChartProps {
   validDays?: number | null;
   isSynthetic?: boolean;
   compact?: boolean;
+  emptyHint?: string;
 }
 
 export function VitalsChart({
@@ -50,6 +52,7 @@ export function VitalsChart({
   validDays,
   isSynthetic = false,
   compact = false,
+  emptyHint,
 }: VitalsChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -276,11 +279,20 @@ export function VitalsChart({
 
   if (points.length === 0) {
     return (
-      <div className="flex h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-base)] p-6 text-center text-sm text-[var(--text-muted)]">
-        <p className="font-semibold">No {title} samples recorded in this window yet.</p>
-        <p className="mt-1 text-xs">
-          Pair a smartwatch, import Apple Health XML, or upload CSV readings on Data Import.
+      <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-base)] p-6 text-center text-sm text-[var(--text-muted)]">
+        <p className="font-semibold text-[var(--text-primary)]">
+          No {title} samples recorded in this window yet.
         </p>
+        <p className="mt-1.5 max-w-md text-xs leading-relaxed">
+          {emptyHint ??
+            'Sync Google Fit, pair your Android Health Connect phone bridge / smartwatch, or import Apple Health XML / CSV readings on Data Import.'}
+        </p>
+        <Link
+          href="/ingest"
+          className="mt-4 inline-flex min-h-10 items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 text-xs font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-elevated)]"
+        >
+          Open Google Fit &amp; Data Import →
+        </Link>
       </div>
     );
   }

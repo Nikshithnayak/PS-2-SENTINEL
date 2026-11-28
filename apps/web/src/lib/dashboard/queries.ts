@@ -403,8 +403,8 @@ export async function loadVitalsSeries(params: {
       .orderBy(asc(vitalRollupsHourly.bucketStart));
 
     // When a wearer syncs only optical/BLE `heart_rate` (e.g., Google Fit or Web BLE 0x180D)
-    // and has zero explicit `resting_heart_rate` rows, backfill from calm heart_rate so HR
-    // charts and personal normal corridors populate seamlessly.
+    // and has zero explicit `resting_heart_rate` rows, backfill from calm heart_rate first,
+    // and if only daytime/activity heart_rate rollups exist in the window, show all heart_rate rollups.
     if (rollups.length === 0 && params.metricType === 'resting_heart_rate') {
       const calmHrRollups = await tx
         .select()
@@ -421,7 +421,43 @@ export async function loadVitalsSeries(params: {
       if (calmHrRollups.length > 0) {
         rollups = calmHrRollups;
         resolvedMetric = 'heart_rate';
+      } else {
+        const anyHrRollups = await tx
+          .select()
+          .from(vitalRollupsHourly)
+          .where(
+            and(
+              eq(vitalRollupsHourly.patientId, params.patientId),
+              eq(vitalRollupsHourly.metricType, 'heart_rate'),
+              gte(vitalRollupsHourly.bucketStart, since),
+            ),
+          )
+          .orderBy(asc(vitalRollupsHourly.bucketStart));
+        if (anyHrRollups.length > 0) {
+          rollups = anyHrRollups;
+          resolvedMetric = 'heart_rate';
+        }
       }
+    }
+
+    let latestAvailableAt: string | null = null;
+    if (rollups.length === 0) {
+      const targetMetrics =
+        params.metricType === 'resting_heart_rate'
+          ? ['resting_heart_rate', 'heart_rate']
+          : [params.metricType];
+      const [latestAny] = await tx
+        .select({ bucketStart: vitalRollupsHourly.bucketStart })
+        .from(vitalRollupsHourly)
+        .where(
+          and(
+            eq(vitalRollupsHourly.patientId, params.patientId),
+            inArray(vitalRollupsHourly.metricType, targetMetrics),
+          ),
+        )
+        .orderBy(desc(vitalRollupsHourly.bucketStart))
+        .limit(1);
+      latestAvailableAt = latestAny?.bucketStart?.toISOString() ?? null;
     }
 
     const prevRollups = await tx
@@ -529,6 +565,8 @@ export async function loadVitalsSeries(params: {
       metricType: params.metricType,
       effectiveMetricType: resolvedMetric,
       window: params.window,
+      hasOlderSamples: Boolean(rollups.length === 0 && latestAvailableAt),
+      latestAvailableAt,
       baseline: baseline
         ? {
             stage: baseline.status,

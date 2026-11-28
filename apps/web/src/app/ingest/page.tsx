@@ -125,17 +125,23 @@ export default function IngestPage() {
     const warn = sp.get('connector_warning');
     const conn = sp.get('connector');
     const synced = sp.get('synced');
+    const syncedSummary = sp.get('synced_summary');
     if (err) {
       setErrorMsg(err);
     } else if (warn) {
       setErrorMsg(
-        `Google account authorized (${conn ?? 'google_fit'}), but Google API reported: ${warn}`,
+        `Google account authorized (${conn ?? 'google_fit'}): ${warn}`,
       );
+      if (synced && Number(synced) > 0) {
+        setStatusMsg(
+          `Synced ${synced} sample(s)${syncedSummary ? ` (${syncedSummary})` : ''}.`,
+        );
+      }
     } else if (conn) {
       const label = conn === 'google_health_api' ? 'Google Health API v4' : 'Google Fit';
       setStatusMsg(
         synced !== null
-          ? `${label} connected directly — synced ${synced} real vital sample(s) cleanly.`
+          ? `${label} connected directly — synced ${synced} real vital sample(s)${syncedSummary ? ` (${syncedSummary})` : ''}.`
           : `${label} connected directly.`,
       );
     }
@@ -415,6 +421,9 @@ export default function IngestPage() {
               onSyncComplete={() => {
                 void qc.invalidateQueries({ queryKey: ['quality-status'] });
                 void qc.invalidateQueries({ queryKey: ['patient-dashboard'] });
+                void qc.invalidateQueries({ queryKey: ['dashboard-patient'] });
+                void qc.invalidateQueries({ queryKey: ['today-series'] });
+                void qc.invalidateQueries({ queryKey: ['vitals-series-explorer'] });
               }}
             />
 

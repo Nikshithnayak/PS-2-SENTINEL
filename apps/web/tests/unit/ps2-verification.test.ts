@@ -266,6 +266,73 @@ describe('GoogleFitAdapter Sleep Sessions & DataSources Fallback', () => {
       }),
     ).rejects.toThrow(/reconnect|permissions|403/i);
   });
+
+  it('recovers Google Fit heart_rate via com.google.heart_rate.summary even when 10+ step streams precede HR in dataSources', async () => {
+    const now = Date.now();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('dataset:aggregate')) {
+        const body = JSON.parse(String(init?.body ?? '{}')) as {
+          aggregateBy?: Array<{ dataTypeName?: string; dataSourceId?: string }>;
+        };
+        const dt = body.aggregateBy?.[0]?.dataTypeName;
+        if (dt === 'com.google.heart_rate.summary') {
+          return new Response(
+            JSON.stringify({
+              bucket: [
+                {
+                  startTimeMillis: String(now - 3_600_000),
+                  endTimeMillis: String(now),
+                  dataset: [
+                    {
+                      dataSourceId: 'derived:com.google.heart_rate.summary',
+                      point: [
+                        {
+                          startTimeNanos: String((now - 1_800_000) * 1_000_000),
+                          value: [{ fpVal: 71.5 }, { fpVal: 82 }, { fpVal: 64 }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return new Response(JSON.stringify({ bucket: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/dataSources')) {
+        const extraSteps = Array.from({ length: 12 }, (_, idx) => ({
+          dataStreamId: `raw:com.google.step_count.delta:phone-${idx}`,
+          dataType: { name: 'com.google.step_count.delta' },
+        }));
+        return new Response(JSON.stringify({ dataSource: extraSteps }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ session: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    const adapter = new GoogleFitAdapter();
+    const samples = await adapter.fetchRecentSamples({
+      externalUserId: 'patient-gfit-summary',
+      startIso: new Date(now - 14 * 24 * 3_600_000).toISOString(),
+      endIso: new Date(now).toISOString(),
+      accessToken: 'mock-token',
+    });
+
+    const hr = samples.filter((s) => s.metricType === 'heart_rate');
+    expect(hr.length).toBeGreaterThanOrEqual(1);
+    expect(hr[0]?.value).toBeCloseTo(71.5, 1);
+  });
 });
 
 function buildSyntheticSeries(days: number, overrides?: {

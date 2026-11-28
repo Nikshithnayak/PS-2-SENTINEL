@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -95,6 +95,8 @@ interface SeriesResponse {
   points: VitalsChartPoint[];
   changePoints: string[];
   alertMarkers: Array<{ timestamp: string }>;
+  hasOlderSamples?: boolean;
+  latestAvailableAt?: string | null;
 }
 
 const COPY = {
@@ -147,6 +149,8 @@ export default function PatientTodayPage() {
   const qc = useQueryClient();
   const [lang, setLang] = useState<'en' | 'kn' | 'hi'>('en');
   const [chartMetric, setChartMetric] = useState<string>('resting_heart_rate');
+  const [chartWindow, setChartWindow] = useState<'24h' | '7d' | '30d'>('7d');
+  const [autoWidened, setAutoWidened] = useState(false);
   const [showWhy, setShowWhy] = useState(false);
   const [showSymptoms, setShowSymptoms] = useState(false);
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
@@ -162,49 +166,62 @@ export default function PatientTodayPage() {
   });
 
   const patientId = query.data?.patientId;
-  const fetchSeries = async (metric: string): Promise<SeriesResponse> => {
+  const fetchSeries = async (metric: string, win: '24h' | '7d' | '30d' = '7d'): Promise<SeriesResponse> => {
     const res = await fetch(
-      `/api/v1/vitals/series?patientId=${patientId}&metric=${metric}&window=7d`,
+      `/api/v1/vitals/series?patientId=${patientId}&metric=${metric}&window=${win}`,
     );
     if (!res.ok) throw new Error(`${res.status}`);
     return res.json();
   };
 
   const rhrQuery = useQuery<SeriesResponse>({
-    queryKey: ['today-series', patientId, 'resting_heart_rate'],
+    queryKey: ['today-series', patientId, 'resting_heart_rate', chartWindow],
     enabled: Boolean(patientId),
-    queryFn: () => fetchSeries('resting_heart_rate'),
+    queryFn: () => fetchSeries('resting_heart_rate', chartWindow),
   });
 
   const spo2Query = useQuery<SeriesResponse>({
-    queryKey: ['today-series', patientId, 'spo2'],
+    queryKey: ['today-series', patientId, 'spo2', chartWindow],
     enabled: Boolean(patientId),
-    queryFn: () => fetchSeries('spo2'),
+    queryFn: () => fetchSeries('spo2', chartWindow),
   });
 
   const stepsQuery = useQuery<SeriesResponse>({
     queryKey: ['today-series', patientId, 'steps'],
     enabled: Boolean(patientId),
-    queryFn: () => fetchSeries('steps'),
+    queryFn: () => fetchSeries('steps', '7d'),
   });
 
   const sleepDurQuery = useQuery<SeriesResponse>({
-    queryKey: ['today-series', patientId, 'sleep_duration_min'],
+    queryKey: ['today-series', patientId, 'sleep_duration_min', '30d'],
     enabled: Boolean(patientId),
-    queryFn: () => fetchSeries('sleep_duration_min'),
+    queryFn: () => fetchSeries('sleep_duration_min', '30d'),
   });
 
   const sleepEffQuery = useQuery<SeriesResponse>({
-    queryKey: ['today-series', patientId, 'sleep_efficiency'],
+    queryKey: ['today-series', patientId, 'sleep_efficiency', '30d'],
     enabled: Boolean(patientId),
-    queryFn: () => fetchSeries('sleep_efficiency'),
+    queryFn: () => fetchSeries('sleep_efficiency', '30d'),
   });
 
   const selectedChartQuery = useQuery<SeriesResponse>({
-    queryKey: ['today-series', patientId, chartMetric],
+    queryKey: ['today-series', patientId, chartMetric, chartWindow],
     enabled: Boolean(patientId),
-    queryFn: () => fetchSeries(chartMetric),
+    queryFn: () => fetchSeries(chartMetric, chartWindow),
   });
+
+  useEffect(() => {
+    if (
+      !autoWidened &&
+      chartWindow === '7d' &&
+      selectedChartQuery.data &&
+      selectedChartQuery.data.points.length === 0 &&
+      selectedChartQuery.data.hasOlderSamples
+    ) {
+      setAutoWidened(true);
+      setChartWindow('30d');
+    }
+  }, [autoWidened, chartWindow, selectedChartQuery.data]);
 
   const checkinMutation = useMutation({
     mutationFn: async (vars: { kind: 'tap_ok' | 'tap_unwell'; symptoms?: string[] }) => {
@@ -500,11 +517,35 @@ export default function PatientTodayPage() {
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                        7-Day Trend vs Personal Normal
+                        {chartWindow === '24h' ? '24-Hour' : chartWindow === '30d' ? '30-Day' : '7-Day'}{' '}
+                        Trend vs Personal Normal
                       </p>
                       <h3 className="font-[family-name:var(--font-display)] text-lg font-bold">
                         {activeChartMeta.label} ({activeChartMeta.unit})
                       </h3>
+                    </div>
+                    <div
+                      role="group"
+                      aria-label="Chart time window"
+                      className="inline-flex rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] p-0.5"
+                    >
+                      {(['24h', '7d', '30d'] as const).map((win) => (
+                        <button
+                          key={win}
+                          type="button"
+                          onClick={() => {
+                            setAutoWidened(true);
+                            setChartWindow(win);
+                          }}
+                          className={`min-h-8 rounded-md px-2.5 text-xs font-semibold cursor-pointer ${
+                            chartWindow === win
+                              ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
+                              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                          }`}
+                        >
+                          {win}
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <VitalsChart
@@ -520,11 +561,18 @@ export default function PatientTodayPage() {
                       (a) => a.timestamp,
                     )}
                     loading={selectedChartQuery.isLoading}
-                    error={selectedChartQuery.isError ? 'Unable to load 7-day trend.' : null}
+                    error={selectedChartQuery.isError ? 'Unable to load physiological trend.' : null}
                     onRetry={() => selectedChartQuery.refetch()}
                     baselineStage={selectedChartQuery.data?.baseline?.stage}
                     validDays={selectedChartQuery.data?.baseline?.validDays}
                     isSynthetic={query.data?.isSynthetic}
+                    emptyHint={
+                      chartMetric === 'resting_heart_rate' &&
+                      ((stepsQuery.data?.points.length ?? 0) > 0 ||
+                        (sleepDurQuery.data?.points.length ?? 0) > 0)
+                        ? 'Steps/Sleep data is synced, but Google Fit returned 0 Heart Rate samples for this period. Check Heart Rate sharing in Google Fit / Health Connect, or connect Android Health Connect Direct Bridge on Data Import.'
+                        : undefined
+                    }
                   />
                 </div>
 

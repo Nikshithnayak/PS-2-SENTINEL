@@ -127,6 +127,19 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const metricCounts: Record<string, number> = {};
+  for (const s of samples) {
+    metricCounts[s.metricType] = (metricCounts[s.metricType] ?? 0) + 1;
+  }
+  const breakdownLabel = Object.entries(metricCounts)
+    .map(([m, c]) => `${m}: ${c}`)
+    .join(', ');
+  const hrSamplesCount = (metricCounts.heart_rate ?? 0) + (metricCounts.resting_heart_rate ?? 0);
+  const gfitHrNotice =
+    parsed.data.provider === 'google_fit' && hrSamplesCount === 0
+      ? ' · Note: Google Fit returned 0 heart_rate readings in the last 14 days — ensure continuous heart-rate sharing is enabled inside Google Fit / Health Connect, or pair Android Health Connect Direct Bridge.'
+      : '';
+
   const ingested = await ingestVitalBatch({
     patientId,
     source: parsed.data.provider,
@@ -135,11 +148,15 @@ export async function POST(request: NextRequest) {
     isSynthetic: false,
   });
 
+  const summaryMessage = `Synced ${ingested.recordsAccepted} real sample(s) from ${parsed.data.provider} (${breakdownLabel}).${gfitHrNotice}`;
+
   if (!parsed.data.evaluate || ingested.recordsAccepted === 0) {
     return NextResponse.json(
       {
         provider: parsed.data.provider,
         patientId,
+        metricCounts,
+        message: summaryMessage,
         ...ingested,
       },
       { status: 201 },
@@ -159,6 +176,8 @@ export async function POST(request: NextRequest) {
     {
       provider: parsed.data.provider,
       patientId,
+      metricCounts,
+      message: summaryMessage,
       ...ingested,
       evaluation: {
         level: evaluation.level,
