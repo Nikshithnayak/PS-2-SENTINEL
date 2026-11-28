@@ -52,7 +52,7 @@ export async function GET() {
   return NextResponse.json({
     serverWhisperAvailable: Boolean(provider),
     providerKind: provider?.kind ?? 'browser_local_whisper',
-    providerLabel: provider?.label ?? 'In-Browser Open-Source Whisper (Xenova/whisper-tiny)',
+    providerLabel: provider?.label ?? 'In-Browser Open-Source Whisper (Xenova/whisper-base)',
   });
 }
 
@@ -82,17 +82,29 @@ export async function POST(request: NextRequest) {
   }
 
   const localeRaw = String(formData?.get('locale') ?? 'en');
-  const language = localeRaw === 'kn' ? 'kn' : localeRaw === 'hi' ? 'hi' : 'en';
+  const modeRaw = String(formData?.get('mode') ?? 'checkin');
+  const language =
+    localeRaw === 'mixed'
+      ? null
+      : localeRaw === 'kn'
+        ? 'kn'
+        : localeRaw === 'hi'
+          ? 'hi'
+          : 'en';
+
+  const promptHint =
+    modeRaw === 'opd_ambient'
+      ? 'Indian OPD doctor-patient consultation in code-mixed English, Kannada, and Hindi: jwara, bukhar, keemu, khansi, breathlessness, usirata, saans, BP, sugar, SpO2, Paracetamol, Dolo 650, Azithromycin, Amoxyclav, Pantoprazole, Metformin, Telmisartan, Amlodipine, BD, OD, TDS, SOS, after food.'
+      : 'Health check-in conversation: vitals, heart rate, SpO2, BP, fever, dizziness, knee pain, medications, Sachet SENTINEL.';
 
   const upstreamForm = new FormData();
   upstreamForm.append('file', audioFile, 'checkin.webm');
   upstreamForm.append('model', provider.model);
-  upstreamForm.append('language', language);
+  if (language) {
+    upstreamForm.append('language', language);
+  }
   upstreamForm.append('response_format', 'json');
-  upstreamForm.append(
-    'prompt',
-    'Health check-in conversation: vitals, heart rate, SpO2, BP, fever, dizziness, knee pain, medications, Sachet SENTINEL.',
-  );
+  upstreamForm.append('prompt', promptHint);
 
   const headers: Record<string, string> = {};
   if (provider.apiKey) {

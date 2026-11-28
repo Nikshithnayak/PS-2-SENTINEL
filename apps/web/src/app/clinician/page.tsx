@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { BellRing, Printer, ShieldAlert, Stethoscope, Users } from 'lucide-react';
+import { BellRing, Mic, Printer, ShieldAlert, Stethoscope, Users } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
+import { OpdScribeWorkspace } from '@/components/clinician/opd-scribe-workspace';
 import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { StatusBadge, SyntheticBadge } from '@/components/health/status-badge';
@@ -105,6 +106,7 @@ const METRICS = [
 
 export default function ClinicianDashboardPage() {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [workspaceTab, setWorkspaceTab] = useState<'triage' | 'scribe'>('triage');
   const [metric, setMetric] = useState<string>('resting_heart_rate');
   const [windowSpan, setWindowSpan] = useState<'24h' | '7d' | '30d'>('7d');
 
@@ -156,13 +158,23 @@ export default function ClinicianDashboardPage() {
       subtitle="Consented cohort ranking, personal baseline corridors & transparent Partial NEWS2"
       isSynthetic={overviewQuery.data?.isSynthetic}
       rightSlot={
-        <Link
-          href="/clinician/report"
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--brand-primary)] px-3.5 text-xs font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
-        >
-          <Printer className="h-4 w-4" aria-hidden="true" />
-          <span>PDF / FHIR</span>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setWorkspaceTab(workspaceTab === 'scribe' ? 'triage' : 'scribe')}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[var(--brand-primary)] bg-[var(--bg-mint-panel)] px-3.5 text-xs font-semibold text-[var(--brand-accent-text)] transition hover:opacity-95 cursor-pointer"
+          >
+            <Mic className="h-4 w-4" aria-hidden="true" />
+            <span>{workspaceTab === 'scribe' ? 'Back to Triage' : 'OPD Scribe'}</span>
+          </button>
+          <Link
+            href="/clinician/report"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--brand-primary)] px-3.5 text-xs font-semibold text-[var(--brand-primary-fg)] transition hover:opacity-95"
+          >
+            <Printer className="h-4 w-4" aria-hidden="true" />
+            <span>PDF / FHIR</span>
+          </Link>
+        </div>
       }
     >
       <main className="space-y-6">
@@ -179,6 +191,49 @@ export default function ClinicianDashboardPage() {
           />
         ) : (
           <>
+            <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+              <div className="inline-flex rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-1">
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('triage')}
+                  className={`inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3.5 text-xs font-semibold cursor-pointer ${
+                    workspaceTab === 'triage'
+                      ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+                  }`}
+                >
+                  <Stethoscope className="h-4 w-4" aria-hidden="true" />
+                  <span>Cohort Triage &amp; Telemetry</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('scribe')}
+                  className={`inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3.5 text-xs font-semibold cursor-pointer ${
+                    workspaceTab === 'scribe'
+                      ? 'bg-[var(--brand-rail-active)] text-[var(--brand-rail-active-fg)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+                  }`}
+                >
+                  <Mic className="h-4 w-4" aria-hidden="true" />
+                  <span>Ambient OPD Scribe (EN / KN / HI)</span>
+                </button>
+              </div>
+              <Link
+                href="/clinician/scribe"
+                className="text-xs font-semibold text-[var(--brand-accent-text)] hover:underline"
+              >
+                Open Dedicated Full-Screen Scribe →
+              </Link>
+            </div>
+
+            {workspaceTab === 'scribe' ? (
+              <OpdScribeWorkspace
+                cohort={cohortQuery.data?.cohort ?? []}
+                selectedPatientId={activePatientId}
+                onSelectPatient={(id) => setSelectedPatientId(id)}
+              />
+            ) : (
+            <>
             {cohortQuery.isSuccess && (cohortQuery.data?.cohort ?? []).length === 0 && (
               <div className="clinical-card p-6 text-sm">
                 <p className="font-bold text-[var(--text-primary)]">
@@ -510,6 +565,8 @@ export default function ClinicianDashboardPage() {
                 </div>
               </div>
             </section>
+            </>
+            )}
           </>
         )}
         </RoleWorkspaceGuard>

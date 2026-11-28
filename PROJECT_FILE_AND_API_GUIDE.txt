@@ -1,0 +1,403 @@
+================================================================================
+SACHET · SENTINEL — COMPLETE FILE MAP & FRONTEND-BACKEND API CONNECTION GUIDE
+================================================================================
+Repository Reference Guide (`PS-2-SENTINEL`)
+Workspace Root: d:\build4manglore
+Production URL: https://ps-2-sentinel.vercel.app
+
+================================================================================
+1. HIGH-LEVEL SYSTEM ARCHITECTURE
+================================================================================
+SENTINEL is a pnpm + Turborepo monorepo + Python FastAPI service structured into 4 workspaces:
+
+  1. apps/web         (@sentinel/web)          — Next.js 16 App Router UI + Backend API routes + PostgreSQL/Drizzle DB + Better Auth
+  2. services/engine  (sentinel-engine)        — Python 3.12 FastAPI statistical detection & personal baseline engine
+  3. packages/shared  (@sentinel/shared)       — Shared Zod schemas, units/bounds, AES-256-GCM PHI crypto, SHA-256 audit hash helpers
+  4. workers/inbox    (@sentinel/inbox-worker) — Cloudflare Email Routing worker for caregiver email replies (OK / CALL ME / SNOOZE)
+
+End-to-End Execution Flow:
+  [Browser UI (Next.js pages + React components)]
+      |  fetch('/api/v1/...') / EventSource('/api/v1/stream') / Better Auth
+      v
+  [Next.js Backend Route Handlers (apps/web/src/app/api/**)]
+      |-- Auth & Role checks: requireSession(), checkPatientScope(), resolveIngestAuth()
+      |-- Database reads/writes: Drizzle ORM -> PostgreSQL (with RLS + append-only SHA-256 audit_logs)
+      |-- Physiological scoring bridge (apps/web/src/lib/engine/client.ts):
+      |       -> When ENGINE_URL is configured (or running non-Vercel local):
+      |            POST ${ENGINE_URL}/v1/score/evaluate  (default: http://127.0.0.1:8000/v1/score/evaluate)
+      |       -> Fallback / Vercel serverless built-in mode (when ENGINE_URL unset on Vercel):
+      |            fallbackEvaluateLocal() in apps/web/src/lib/engine/client.ts
+      |-- Clinician Ambient OPD Scribe (apps/web/src/lib/clinician/opd-scribe.ts + diarization.ts):
+      |       -> Deterministic multilingual parser (code-mixed EN / Kannada / Hindi) + NLM RxNorm lookup
+      |       -> Zero external LLM calls required; persisted cleanly in `opd_consultations`
+      v
+  [Alert Policy + Escalation + Outbox (apps/web/src/lib/alerts/policy.ts & outbox.ts)]
+      |-> SSE live stream push (/api/v1/stream)
+      |-> External alert channels: Web Push (VAPID), ntfy, Resend email, Telegram, SMS flag
+
+================================================================================
+2. ROLE-SEPARATED PORTALS & FRONTEND -> BACKEND API MATRIX
+================================================================================
+
+Entry & Login Portals:
+  - /                              -> apps/web/src/app/page.tsx
+      Server redirect: reads getSessionContext(); if signed in, redirects to role's home (/today, /caregiver, or /clinician);
+      if signed out, redirects directly to /auth.
+  - /auth                          -> apps/web/src/app/auth/page.tsx -> PortalAuthScreen (portal="patient")
+  - /caregiver/login               -> apps/web/src/app/caregiver/login/page.tsx -> PortalAuthScreen (portal="caregiver")
+  - /clinician/login               -> apps/web/src/app/clinician/login/page.tsx -> PortalAuthScreen (portal="clinician")
+  - /auth/oauth-complete           -> apps/web/src/app/auth/oauth-complete/route.ts
+      Reads signed `sentinel_portal_role` cookie, promotes non-org_admin OAuth login to selected portal role
+      (patient | caregiver | clinician), provisions patientProfiles row if patient, logs `auth.portal_role_activated`, redirects to portal home.
+
+Frontend Pages -> Backend API Endpoints Called:
+
+  [apps/web/src/components/auth/portal-auth-screen.tsx] (used by /auth, /caregiver/login, /clinician/login)
+    - GET  /api/v1/auth/providers          (checks Google OAuth availability & callback URL)
+    - POST /api/v1/auth/portal-intent      (stores HMAC-signed `sentinel_portal_role` intent cookie before OAuth)
+    - Better Auth client (`authClient`):
+        signIn.email / signUp.email / signIn.social({ provider: 'google' }) / signOut -> /api/auth/[...all]
+    - Enforces role segregation: Caregiver login rejects non-caregiver accounts; Clinician login rejects non-clinician/non-org_admin accounts.
+
+  [apps/web/src/app/today/page.tsx] (/today — Patient Elder Mode; guarded by RoleWorkspaceGuard + SignedOutGate)
+    - GET  /api/v1/dashboard/patient       (loads elder profile, latest risk assessment, baselines, alerts, check-ins, meds, environment)
+    - GET  /api/v1/vitals/series           (loads 7d chart points + personal baseline corridor for selected metric)
+    - POST /api/v1/checkins                (saves quick one-tap check-in / wellness note)
+    - POST /api/v1/medications             (logs medication dose status: taken / skipped / adds medication with RxNorm lookup)
+    - Embeds VoiceCheckinCompanion component (see below)
+
+  [apps/web/src/components/voice/voice-checkin.tsx] (embedded inside /today)
+    - Web Worker: whisper.worker.ts       (in-browser quantized ONNX Whisper ASR `Xenova/whisper-base` + `analyzeAndNormalizePcm` silence/gain filter)
+    - GET  /api/v1/voice/transcribe        (checks server STT provider configuration)
+    - POST /api/v1/voice/transcribe        (uploads recorded audio when Groq / Local Whisper / OpenAI server STT is configured)
+    - POST /api/v1/voice/checkin           (parses symptoms & red flags, runs conversational reply, creates elder_unwell urgent alert if severe)
+
+  [apps/web/src/app/caregiver/page.tsx] (/caregiver — Caregiver Console; guarded by RoleWorkspaceGuard(['caregiver']) + SignedOutGate)
+    - GET  /api/v1/clinician/cohort        (lists consented/linked patient profiles)
+    - GET  /api/v1/dashboard/patient?patientId=...
+    - GET  /api/v1/vitals/series?patientId=...&metric=resting_heart_rate&window=7d
+    - SSE  /api/v1/stream?patientId=...    (live alerts, engine evaluations, and status updates)
+    - POST /api/v1/alerts/{id}/ack         (Acknowledge / Snooze 2h / Escalate Step / Resolve buttons)
+
+  [apps/web/src/app/clinician/page.tsx] (/clinician — Clinician Triage Workstation + OPD Scribe Tab; guarded by RoleWorkspaceGuard(['clinician','org_admin']) + SignedOutGate)
+    - GET  /api/v1/clinician/cohort        (consented patient cohort summary & Partial NEWS2 triage list)
+    - GET  /api/v1/dashboard/patient?patientId=...
+    - GET  /api/v1/vitals/series?patientId=...&metric=...&window=...
+    - Tab toggle between Cohort Triage & Telemetry and embedded `OpdScribeWorkspace` component
+
+  [apps/web/src/app/clinician/scribe/page.tsx] (/clinician/scribe — Dedicated Ambient OPD Clinical Scribe; guarded by RoleWorkspaceGuard(['clinician','org_admin']))
+    - GET  /api/v1/clinician/cohort        (loads consented cohort options for linked OPD patient binding)
+    - Embeds `OpdScribeWorkspace` (see below)
+
+  [apps/web/src/components/clinician/opd-scribe-workspace.tsx] (used on /clinician tab & /clinician/scribe)
+    - Wispr Hybrid Voice Engine:
+        * Auto mode uses instant browser `SpeechRecognition` (`en-IN` / `kn-IN` / `hi-IN` live hot-switching via `handleMicLangChange`) when no server Whisper key is set
+        * On-device `whisper.worker.ts` (`Xenova/whisper-base`, multi-channel PCM downmix via `decodeBlobToMono16k`, RMS silence gate + gain boost, `isWhisperHallucination` filter eliminating false `"Thank you."` noise decodes)
+        * Server Whisper `/api/v1/voice/transcribe` (`mode=opd_ambient`, `locale=mixed|en|kn|hi`) when `GROQ_API_KEY` / `WHISPER_LOCAL_URL` / `OPENAI_API_KEY` is configured
+    - Real-Time Client Speaker Diarization & Live Preview:
+        * `classifyConsultationSpeaker()` classifies every spoken/typed turn (`Doctor` vs `Patient` with language tag `EN` / `KN` / `HI` & confidence reasons)
+        * `extractLiveClinicalPreview()` highlights live symptoms, vitals, drugs, and red flags
+    - Backend API calls:
+        * GET  /api/v1/clinician/scribe    (loads sample consultation presets, capabilities, and saved drafts/signed consultations)
+        * POST /api/v1/clinician/scribe    (`action: 'generate' | 'approve' | 'delete'`)
+
+  [apps/web/src/app/clinician/report/page.tsx] (/clinician/report — Printable SBAR Summary & FHIR Export)
+    - GET  /api/v1/dashboard/patient
+    - GET  /api/v1/export/fhir?patientId=... (downloads FHIR R4 JSON Bundle)
+
+  [apps/web/src/app/alerts/page.tsx] (/alerts — Alerts, Escalation Ladder, Outbox & Emergency 112/108 View)
+    - GET  /api/v1/alerts                  (resolves accessible patient for patient/caregiver/clinician, returns alerts + delivery receipts)
+    - GET  /api/v1/emergency/hospitals     (nearby hospitals via OpenStreetMap Overpass API)
+    - SSE  /api/v1/stream                  (real-time alert lifecycle updates)
+    - POST /api/v1/engine/evaluate         (manual Evaluate & Dispatch Alerts trigger)
+    - POST /api/v1/alerts/{id}/ack         (Acknowledge / Snooze 2h / Escalate Step / Resolve / False Alarm feedback)
+
+  [apps/web/src/app/ingest/page.tsx] (/ingest — Smartwatch Pairing, Apple XML, CSV/Takeout Import & Data Quality)
+    - GET  /api/v1/quality/status          (data completeness, wear time, device silence status, connector status)
+    - GET  /api/v1/api-keys                (lists active/revoked ingest API keys)
+    - POST /api/v1/api-keys                (generates per-patient `x-api-key` for mobile webhook ingestion)
+    - POST /api/v1/import/apple-xml        (streams Apple Health export.xml upload)
+    - POST /api/v1/import/csv-takeout      (imports mapped CSV or Fitbit/Takeout JSON)
+    - POST /api/v1/context/environment     (refreshes Open-Meteo ambient weather + PM2.5 air quality)
+    - POST /api/v1/engine/evaluate         (re-evaluates vitals & baseline after import)
+    - Embeds WatchSyncHub component (see below)
+
+  [apps/web/src/components/ingest/watch-sync-hub.tsx] (embedded inside /ingest)
+    - Browser Web Bluetooth BLE 0x180D / 0x2A37 live heart rate & RR-interval capture -> normalize & POST /api/v1/ingest
+    - POST /api/v1/api-keys                (generates Health Connect / Tasker / iOS Health Auto Export URL with apiKey)
+    - GET  /api/v1/connectors/google/status?mode=fit|health
+    - GET  /api/v1/connectors/google/connect?mode=fit|health&patientId=... (redirects to Google OAuth consent with `gfit_` state)
+    - POST /api/v1/sync/provider           (pulls recent vitals from OpenWearables / Google Fit / Google Health API)
+    - Displays webhook URL & callback info for `/api/v1/ingest/watch` and `/api/auth/callback/google`
+
+  [apps/web/src/app/signals/page.tsx] (/signals — Multi-Window Signal Explorer & Quarantine Exclusions)
+    - GET    /api/v1/vitals/series?metric=...&window=30d
+    - GET    /api/v1/exclusions
+    - POST   /api/v1/exclusions            (quarantine illness/travel/medication/repair time window from baseline updates)
+    - DELETE /api/v1/exclusions?id=...
+
+  [apps/web/src/app/settings/page.tsx] (/settings — Clinical Profile, Thresholds & DPDP Data Rights)
+    - GET   /api/v1/settings/profile
+    - PATCH /api/v1/settings/profile
+    - GET   /api/v1/privacy/export         (DPDP full JSON export download)
+    - POST  /api/v1/privacy/erase          (DPDP Right to Erasure with `"ERASE MY DATA"` phrase)
+
+  [apps/web/src/app/settings/consent/page.tsx] (/settings/consent — Care Circle Invites, Consent Grants & Audit Chain)
+    - GET  /api/v1/consent
+    - POST /api/v1/consent                 (grant / withdraw granular scopes)
+    - GET  /api/v1/care-circle
+    - POST /api/v1/care-circle             (invite caregiver / clinician)
+    - GET  /api/v1/audit/verify            (verifies SHA-256 cryptographic hash chain across `audit_logs`)
+
+  [apps/web/src/app/eval/page.tsx] (/eval — Causal Ablation & Benchmark Lab)
+    - GET  /api/v1/datasets                (lists dataset adapters & benchmark catalog from Python engine)
+    - POST /api/v1/engine/benchmark        (triggers causal ablation / lead-time benchmark via Python engine)
+
+  [apps/web/src/app/design/page.tsx] (/design) — Visual design system tokens & PulseHeroVisual preview.
+  [apps/web/src/app/model-card/page.tsx] (/model-card) — Model Card, Partial NEWS2 scope & safety boundaries.
+
+================================================================================
+3. COMPLETE BACKEND API ROUTE DIRECTORY (apps/web/src/app/api/**)
+================================================================================
+
+Auth & Health Routes:
+  - GET, POST /api/auth/[...all]
+      File: apps/web/src/app/api/auth/[...all]/route.ts
+      What: Mounts Better Auth handler (`lib/auth.ts`). Intercepts GET `/api/auth/callback/google` when `state` starts
+            with `gfit_` and routes it to `handleGoogleConnectorCallback()` so sign-in and Google Fit share one callback URI.
+  - GET /api/v1/auth/providers
+      File: apps/web/src/app/api/v1/auth/providers/route.ts -> lib/auth-config.ts
+      What: Public check returning Google OAuth enabled status, callback URL, and missing env vars.
+  - POST /api/v1/auth/portal-intent
+      File: apps/web/src/app/api/v1/auth/portal-intent/route.ts -> lib/auth-portal.ts
+      What: Signs HMAC `sentinel_portal_role` cookie (`patient` | `caregiver` | `clinician`) prior to OAuth redirect.
+  - GET /api/health
+      File: apps/web/src/app/api/health/route.ts
+      What: Probes PostgreSQL (`SELECT 1`) and Python engine (`${ENGINE_URL}/healthz`, or reports `ts-deterministic` on Vercel when `ENGINE_URL` is unset).
+
+Patient Dashboard, Clinician Cohort, OPD Scribe & Settings Routes:
+  - GET /api/v1/dashboard/patient        (apps/web/src/app/api/v1/dashboard/patient/route.ts)
+      Auth: requireSession + checkPatientScope('vitals_read')
+      DB/Lib: queries.ts -> loadPatientDashboard() (returns profile, latest assessment, baselines, alerts, check-ins, meds, environment, silence status).
+  - GET /api/v1/clinician/cohort         (apps/web/src/app/api/v1/clinician/cohort/route.ts)
+      Auth: requireSession
+      DB/Lib: queries.ts -> loadCohortSummaries(ctx) (returns only consented/linked patient summaries).
+  - GET, POST /api/v1/clinician/scribe   (apps/web/src/app/api/v1/clinician/scribe/route.ts)
+      Auth: requireSession + clinician/org_admin role guard (+ checkPatientScope when linked patientId is selected)
+      DB/Lib: ensureOpdConsultationsTable() + generateOpdScribeDraft() (zero-LLM deterministic EN/KN/HI extraction + NLM RxNorm enrichment);
+              GET lists saved consultations + `OPD_SAMPLE_CONSULTATIONS`; POST handles `generate`, `approve` (with optional `medications` sync + audit log), and `delete`.
+  - GET /api/v1/vitals/series            (apps/web/src/app/api/v1/vitals/series/route.ts)
+      Auth: requireSession + checkPatientScope('vitals_read')
+      DB/Lib: queries.ts -> loadVitalsSeries() (returns time-series samples + hourly rollups + baseline normal band).
+  - GET, POST /api/v1/checkins           (apps/web/src/app/api/v1/checkins/route.ts)
+      Auth: requireSession + checkPatientScope
+      DB/Lib: inserts checkin_events + publishes patient SSE event.
+  - GET, POST /api/v1/medications        (apps/web/src/app/api/v1/medications/route.ts)
+      Auth: requireSession + checkPatientScope
+      Lib/Ext: lib/meds/rxnorm.ts queries NIH RxNav (`https://rxnav.nlm.nih.gov/REST/drugs.json`), flags beta-blockers / rate-modifying meds, stores medications & medication_events.
+  - GET, POST, DELETE /api/v1/exclusions (apps/web/src/app/api/v1/exclusions/route.ts)
+      Auth: requireSession + checkPatientScope
+      DB: manages `excluded_periods` quarantine windows.
+  - GET, PATCH /api/v1/settings/profile  (apps/web/src/app/api/v1/settings/profile/route.ts)
+      Auth: requireSession + checkPatientScope
+      DB: updates age band, conditions, locale, city, coordinates, emergency numbers, quiet hours, alert budget.
+  - POST /api/v1/context/environment     (apps/web/src/app/api/v1/context/environment/route.ts)
+      Auth: requireSession + checkPatientScope
+      Lib/Ext: lib/context/open-meteo.ts queries Open-Meteo Forecast + Air Quality using rounded lat/lon (no PII), saves `environment_snapshots`.
+
+Wearable Ingestion, Connectors & API Keys Routes:
+  - GET, POST, DELETE /api/v1/api-keys   (apps/web/src/app/api/v1/api-keys/route.ts)
+      Auth: requireSession
+      DB/Crypto: generates hashed API keys (`@sentinel/shared` generateApiKey/hashApiKey), returns plaintext secret once on creation.
+  - POST /api/v1/ingest                  (apps/web/src/app/api/v1/ingest/route.ts)
+      Auth: resolveIngestAuth(session | x-api-key)
+      Lib: ingestion/quality.ts -> ingestVitalBatch() (unit normalization, physical bounds check, source hash dedup, motion artifact flagging, hourly rollups).
+  - GET, POST /api/v1/ingest/watch       (apps/web/src/app/api/v1/ingest/watch/route.ts)
+      Auth: resolveIngestAuth(session | x-api-key header or `?apiKey=` query param)
+      Lib: ingestion/watch-normalizer.ts (`normalizeWatchPayload` for Health Connect Webhook, Apple Health Auto Export, Flat JSON, Canonical) -> ingestVitalBatch() -> optional runAndPersistEvaluation() + maybeTriggerAlertFromEvaluation().
+  - POST /api/v1/import/apple-xml        (apps/web/src/app/api/v1/import/apple-xml/route.ts)
+      Auth: requireSession + checkPatientScope
+      Lib: ingestion/importers/apple-xml.ts -> streaming parser -> ingestVitalBatch().
+  - POST /api/v1/import/csv-takeout      (apps/web/src/app/api/v1/import/csv-takeout/route.ts)
+      Auth: requireSession + checkPatientScope
+      Lib: ingestion/importers/csv-takeout.ts (`parseCsvWithMapper` / `parseTakeoutJson`) -> ingestVitalBatch().
+  - GET /api/v1/quality/status           (apps/web/src/app/api/v1/quality/status/route.ts)
+      Auth: requireSession + checkPatientScope
+      Lib: ingestion/quality.ts (`evaluateDeviceSilence`), adapters health check, Google connector status.
+  - GET /api/v1/connectors/google/connect (apps/web/src/app/api/v1/connectors/google/connect/route.ts)
+      Auth: getSessionContext + resolveSessionPatientScope
+      Lib: connectors/google-cloud-health.ts -> sets `sentinel_gconn_state` cookie and redirects to Google OAuth with `gfit_...` state.
+  - GET /api/v1/connectors/google/callback (apps/web/src/app/api/v1/connectors/google/callback/route.ts)
+      What: Direct alias delegating to `handleGoogleConnectorCallback` (also handled at `/api/auth/callback/google` when `state=gfit_*`).
+  - GET, DELETE /api/v1/connectors/google/status (apps/web/src/app/api/v1/connectors/google/status/route.ts)
+      Auth: requireSession; checks or revokes stored encrypted Google Fit / Health OAuth tokens.
+  - POST /api/v1/sync/provider           (apps/web/src/app/api/v1/sync/provider/route.ts)
+      Auth: requireSession + resolveSessionPatientScope
+      Lib/Ext: uses OpenWearablesAdapter / GoogleFitAdapter (Google Fitness dataset:aggregate) / GoogleHealthAdapter -> ingestVitalBatch() -> runAndPersistEvaluation() + maybeTriggerAlertFromEvaluation().
+
+Engine, Alerts, Escalation, Webhooks & Emergency Routes:
+  - GET, POST /api/v1/engine/evaluate    (apps/web/src/app/api/v1/engine/evaluate/route.ts)
+      Auth: requireSession + checkPatientScope('vitals_read')
+      Lib/Engine: runAndPersistEvaluation() (calls Python `${ENGINE_URL}/v1/score/evaluate` or TS fallback), persists baseline_states, risk_assessments, detector_decision_logs, audit_logs, then runs maybeTriggerAlertFromEvaluation().
+  - POST /api/v1/engine/benchmark        (apps/web/src/app/api/v1/engine/benchmark/route.ts)
+      Auth: requireSession; proxies to Python `${ENGINE_URL}/v1/eval/benchmark`.
+  - GET /api/v1/datasets                 (apps/web/src/app/api/v1/datasets/route.ts)
+      Auth: requireSession; proxies to Python `${ENGINE_URL}/v1/datasets` (PMData, LifeSnaps, WESAD, MMASH).
+  - GET, DELETE /api/v1/alerts           (apps/web/src/app/api/v1/alerts/route.ts)
+      Auth: requireSession + checkPatientScope('vitals_read' or 'alerts_receive'); supports caregiver/clinician access via getAccessiblePatientIds().
+      GET returns patient settings, latest 25 alerts, latest 40 outbox deliveries; DELETE clears only `isSynthetic=true` alerts.
+  - POST /api/v1/alerts/[id]/ack         (apps/web/src/app/api/v1/alerts/[id]/ack/route.ts)
+      Auth: requireSession + checkPatientScope('alerts_receive' or 'vitals_read')
+      Lib: outbox.ts -> applyAlertAction() (acknowledge / snooze / escalate / resolve + bounded sensitivity tuning).
+  - POST /api/v1/alerts/escalate         (apps/web/src/app/api/v1/alerts/escalate/route.ts)
+      Auth: requireSession + checkPatientScope
+      Lib: outbox.ts -> escalateAlerts() + processOutboxBatch().
+  - GET /api/v1/stream                   (apps/web/src/app/api/v1/stream/route.ts)
+      Auth: requireSession + checkPatientScope
+      Lib: Server-Sent Events stream backed by `lib/alerts/events.ts` with 15s keepalive heartbeats.
+  - GET, POST /api/v1/push/subscribe     (apps/web/src/app/api/v1/push/subscribe/route.ts)
+      Auth: requireSession; serves VAPID public key and registers browser `push_subscriptions`.
+  - GET /api/v1/emergency/hospitals      (apps/web/src/app/api/v1/emergency/hospitals/route.ts)
+      Auth: requireSession + checkPatientScope; lib/alerts/emergency.ts -> queries OpenStreetMap Overpass API around patient coords.
+  - POST /api/v1/webhooks/inbox-reply    (apps/web/src/app/api/v1/webhooks/inbox-reply/route.ts)
+      Auth: `x-inbox-secret` header matching `resolveInboxWebhookSecret()` OR authenticated session (`getSessionContext`).
+      What: Called by Cloudflare worker (`workers/inbox/src/index.ts`); parses OK / CALL ME / SNOOZE and calls applyAlertAction().
+  - POST /api/v1/webhooks/telegram       (apps/web/src/app/api/v1/webhooks/telegram/route.ts)
+      Auth: `x-telegram-bot-api-secret-token` header matching `TELEGRAM_WEBHOOK_SECRET`.
+      What: Parses Telegram message/callback commands (`/ok`, `/callme`, `/snooze`) and calls applyAlertAction().
+
+Voice Companion & Privacy / Consent / Exports Routes:
+  - GET, POST /api/v1/voice/transcribe   (apps/web/src/app/api/v1/voice/transcribe/route.ts)
+      Auth: requireSession; reports `In-Browser Open-Source Whisper (Xenova/whisper-base)` default or Groq/Local Whisper/OpenAI when configured; supports `locale=mixed|en|kn|hi` and `mode=opd_ambient`.
+  - POST /api/v1/voice/checkin           (apps/web/src/app/api/v1/voice/checkin/route.ts)
+      Auth: requireSession + checkPatientScope; parses symptoms & severity (`lib/voice/parser.ts` + `lib/voice/companion.ts`),
+            inserts `checkin_events`, emits SSE event, and on high-severity red-flag symptoms creates an urgent Step-4 alert + runs outbox.
+  - GET, POST /api/v1/care-circle        (apps/web/src/app/api/v1/care-circle/route.ts)
+      Auth: requireSession; lists/invites care circle members (auto-activates when user signs up with matching email).
+  - GET, POST /api/v1/consent            (apps/web/src/app/api/v1/consent/route.ts)
+      Auth: requireSession + checkPatientScope; grants/withdraws scopes (`vitals_read`, `alerts_receive`, `checkin_view`, `clinician_export`, `emergency_dispatch`) with audit logs.
+  - GET /api/v1/audit/verify             (apps/web/src/app/api/v1/audit/verify/route.ts)
+      Auth: requireSession; verifies entire SHA-256 hash chain in `audit_logs` via `verifyAuditChain()`.
+  - GET /api/v1/privacy/export           (apps/web/src/app/api/v1/privacy/export/route.ts)
+      Auth: requireSession + checkPatientScope; DPDP patient JSON export.
+  - POST /api/v1/privacy/erase           (apps/web/src/app/api/v1/privacy/erase/route.ts)
+      Auth: requireSession (patient owner or org_admin); requires `"ERASE MY DATA"`, scrubs encrypted PII, withdraws consent & keys, sets `deletedAt`, logs audit receipt.
+  - GET /api/v1/export/fhir              (apps/web/src/app/api/v1/export/fhir/route.ts)
+      Auth: requireSession + checkPatientScope; lib/exports/fhir.ts -> builds FHIR R4 Bundle (Patient + Observations + Flag/Alert).
+  - GET /api/v1/export/cohort-deidentified (apps/web/src/app/api/v1/export/cohort-deidentified/route.ts)
+      Auth: requireSession (`clinician` with `clinician_export` consent or `org_admin`); returns pseudonymized research cohort JSON with zero PII.
+
+================================================================================
+4. PYTHON FASTAPI ENGINE (services/engine/**)
+================================================================================
+FastAPI App (`services/engine/app/main.py`):
+  - GET  /healthz                        -> Service liveness check
+  - GET  /readyz                         -> Contracts version & config readiness check
+  - GET  /v1/sim/scenarios               -> Lists 11 deterministic physiological simulation scenarios
+  - POST /v1/sim/generate                -> Generates synthetic scenario vitals (`sim/generator.py`)
+  - POST /v1/baseline/fit                -> Fits personal circadian median + MAD baseline (`engine/baseline.py`)
+  - POST /v1/score/evaluate              -> Full L1 + L2 + L3 + Partial NEWS2 evaluation (`engine/detectors.py`)
+  - POST /v1/eval/benchmark              -> Runs ablation & lead-time benchmark (`engine/eval_harness.py`)
+  - GET  /v1/datasets                    -> Lists PMData / LifeSnaps / WESAD / MMASH dataset loaders (`engine/datasets/loaders.py`)
+
+Internal Python Modules:
+  - engine/features.py                   -> UTC timestamp parsing, IST circadian block mapping, quarantine exclusion filtering, hourly rollups.
+  - engine/baseline.py                   -> Exponentially weighted median + MAD dispersion with prior blending (warming_prior -> learning -> calibrated).
+  - engine/conditions.py                 -> Condition priors (general_frailty, copd, hypertension, diabetes, chf) + wearable Partial NEWS2 scoring (marking unmeasured fields explicitly).
+  - engine/detectors.py                  -> Layer 1 hard safety rules, Layer 2 directional EWMA/CUSUM & Pelt change-points, Layer 3 multivariate coherence & heat/activity confounder suppression.
+  - engine/eval_harness.py               -> Reproducible seed-based precision/recall/false-alarm/lead-time benchmark harness.
+  - engine/datasets/loaders.py           -> Adapters for public datasets (PMData, LifeSnaps, WESAD, MMASH).
+  - sim/generator.py                     -> Synthetic physiological trajectory generator (`early_infection`, COPD, exercise, silence, etc.).
+
+================================================================================
+5. SHARED LIBRARIES, WORKERS & MIDDLEWARE SUMMARY
+================================================================================
+Packages & Root Files:
+  - README.md                            -> Repository overview, Quick Start, OPD Scribe & verification guide
+  - PROJECT_FILE_AND_API_GUIDE.txt       -> This complete codebase map, API matrix, and 25-table DB reference
+  - package.json                         -> Monorepo pnpm scripts (`dev`, `build`, `test`, `typecheck`, `db:migrate`, `db:seed`, `test:e2e`)
+  - turbo.json                           -> Turborepo pipeline task graph & allowed env vars
+  - packages/shared/src/schemas.ts       -> RoleSchema, LocaleSchema, ConditionModuleSchema, MetricTypeSchema, etc.
+  - packages/shared/src/units.ts         -> CANONICAL_UNITS, PHYSICAL_BOUNDS, unit conversion & validation
+  - packages/shared/src/crypto.ts        -> AES-256-GCM PHI encryption/decryption, API key generation/hashing, SHA-256 sample/audit chain verification
+  - packages/shared/contracts/sentinel-contracts.json -> Synced JSON enum contract shared with Python engine
+  - workers/inbox/src/index.ts           -> Cloudflare Email Routing worker extracting reply intent & posting signed command to `/api/v1/webhooks/inbox-reply`
+
+Web Core Libs (`apps/web/src/lib/**`):
+  - auth.ts / auth-config.ts / auth-portal.ts / auth-client.ts -> Better Auth config, Google OAuth setup, signed portal intent tokens, client auth hook
+  - session.ts / roles.ts                -> Request session loader, consent scope verifier, per-role sidebar/mobile nav config (including `/clinician/scribe` for `clinician` & `org_admin`)
+  - proxy.ts                             -> Next.js security headers middleware (CSP allowing Open-Meteo/OSM/Overpass/RxNav/OpenFDA, X-Frame-Options DENY, Permissions-Policy, `Cache-Control: no-store` on `/api/*`)
+  - engine/client.ts                     -> Calls Python engine `/v1/score/evaluate` or runs TS deterministic fallback (`fallbackEvaluateLocal`) and persists assessments
+  - alerts/policy.ts                     -> N-of-M persistence, cooldown deduplication, quiet hours, urgent override, hysteresis, daily alert budget
+  - alerts/outbox.ts                     -> Step ladder (Step 0 Patient -> Step 1 Primary Caregiver -> Step 2 Secondary Caregiver -> Step 3 Clinician -> Step 4 Emergency 112/108), idempotent `alert_deliveries`, manual actions & feedback offset
+  - alerts/adapters.ts / env-config.ts   -> Multi-channel senders (`in_app`, `web_push`, `email`, `telegram`, `ntfy`, `sms_flag`)
+  - alerts/events.ts                     -> In-memory pub/sub emitter backing `/api/v1/stream` SSE
+  - dashboard/queries.ts                 -> Consented patient access lookup, dashboard aggregation, cohort summaries, 7d/30d vitals series
+  - clinician/diarization.ts             -> `classifyConsultationSpeaker`, `detectUtteranceLanguageTag`, `parseTranscriptIntoTurns`, `formatTurnsToTranscript` (EN / Kannada / Hindi Doctor vs Patient attribution)
+  - clinician/opd-scribe.ts              -> `extractLiveClinicalPreview`, `parseCodeMixedOpdTranscriptDeterministic`, `generateOpdScribeDraft`, `OPD_SAMPLE_CONSULTATIONS` (zero-LLM SOAP note, Rx draft + NLM RxNorm lookup, EN/KN/HI patient summary)
+  - voice/parser.ts / companion.ts / transcript-cleaner.ts -> Symptom & severity extraction + `isWhisperHallucination` & `cleanSpokenTranscript` filler/noise cleaner
+  - messages/en.json, kn.json, hi.json   -> English, Kannada, and Hindi translation catalogs
+
+Shared & Domain UI Components (`apps/web/src/components/**`):
+  - sentinel-shell.tsx / sentinel-nav.tsx -> Role-aware layout shell, header/sidebar/mobile nav, theme & locale controls
+  - clinician/opd-scribe-workspace.tsx   -> `OpdScribeWorkspace` (Wispr live SpeechRecognition / Whisper Base capture, Doctor ↔ Patient feed, live cues, editable SOAP/Rx/summary & approval flow)
+  - voice/whisper.worker.ts              -> Shared Web Worker running quantized `Xenova/whisper-base` (`@huggingface/transformers`), PCM RMS silence gate & quiet-mic normalization
+  - charts/vitals-chart.tsx              -> Apache ECharts canvas renderer with personal baseline tolerance band & alert markers
+  - health/activity-ring-card.tsx / sleep-quality-card.tsx / status-badge.tsx -> Daily elder activity/sleep cards & Stable/Watch/Warning/Urgent/Synthetic badges
+  - health/role-gate.tsx / signed-out-gate.tsx -> Role workspace guard with 1-click portal sign-out switch, signed-out login prompt
+  - visuals/pulse-hero.tsx / motion/primitives.tsx -> Calm SVG visual & reduced-motion-safe animation wrappers
+  - pwa-offline-banner.tsx + public/sw.js -> Offline banner, Service Worker shell caching, Web Push notification handler
+
+================================================================================
+6. DATABASE SCHEMA & RLS SECURITY (apps/web/src/db/**)
+================================================================================
+Schema & Migration Files:
+  - apps/web/src/db/schema.ts            -> Drizzle ORM definitions for 25 PostgreSQL tables
+  - apps/web/src/db/migrations/0001_init.sql -> SQL DDL, range partitions, triggers, RLS roles & policies
+  - apps/web/src/db/index.ts             -> Pool/Drizzle setup + `withUserDb` (enforces `SET LOCAL ROLE sentinel_app` & `app.current_user_id`) + `withSystemDb` (`app.rls_bypass = 'true'`) + `appendAuditLog`
+  - apps/web/src/db/local-pg.ts          -> Auto-starts Windows `embedded-postgres` on port 5433 when no external `DATABASE_URL` is active
+  - apps/web/src/db/seed.ts              -> Deterministic seed fixtures for local/E2E testing
+  - apps/web/scripts/boot-local.ts       -> Starts embedded/configured Postgres, applies migrations, boots Python uvicorn engine + Next.js server
+
+All 25 PostgreSQL Tables:
+  Auth (Better Auth):
+    1. user                2. session             3. account             4. verification
+  Identity, Consent & Keys:
+    5. patient_profiles    6. care_circle_members 7. consent_grants      8. api_keys
+  Telemetry & Baselines:
+    9. ingest_batches     10. vital_samples (PARTITION BY RANGE (recorded_at): 2026_10, 2026_11, 2026_12, default)
+   11. vital_rollups_hourly 12. baseline_states  13. excluded_periods
+  Detection, Alerts & Outbox:
+   14. risk_assessments   15. detector_decision_logs 16. alerts          17. alert_deliveries
+  Care Context, OPD Scribe & System:
+   18. checkin_events     19. medications        20. medication_events   21. environment_snapshots
+   22. push_subscriptions 23. opd_consultations  24. job_queue
+   25. audit_logs (immutable: BEFORE UPDATE OR DELETE trigger `trg_audit_no_update`)
+
+Row-Level Security (FORCE ROW LEVEL SECURITY):
+  Enabled & forced on `patient_profiles`, `vital_samples`, `alerts`, and `checkin_events` via PostgreSQL function
+  `sentinel_has_patient_access(target_patient_id, required_scope)` unless `app.rls_bypass = 'true'`.
+
+================================================================================
+7. TEST SUITES, CI & DEPLOYMENT CONFIGURATION
+================================================================================
+Unit Tests (`apps/web/tests/unit/` — 12 files, Vitest):
+  - opd-scribe.test.ts (EN/KN/HI speaker diarization, code-mixed SOAP/Rx extraction, `isWhisperHallucination` filtering)
+  - alerts-outbox.test.ts, auth-google.test.ts, db-rls-audit.test.ts, engine-bridge.test.ts
+  - ingestion-quality.test.ts, phase5-workflows.test.ts, phase6-i18n.test.ts, phase7-channels.test.ts
+  - phase8-exports.test.ts, phase9-security.test.ts, watch-sync.test.ts
+
+End-to-End Tests (`apps/web/tests/e2e/` — 8 files, Playwright + @axe-core/playwright WCAG 2.2 AA):
+  - phase1.spec.ts (auth, consent, audit ledger)
+  - phase2.spec.ts (watch webhook, API key, Apple XML & CSV imports)
+  - phase3.spec.ts (telemetry scoring via Python FastAPI engine)
+  - phase4.spec.ts (alert SSE, escalation, 112/108 + hospitals)
+  - phase5.spec.ts (Today Elder Mode, Caregiver ack, Clinician ECharts/NEWS2, Ambient OPD Scribe E2E)
+  - phase6.spec.ts (hero visual, reduced-motion, PWA manifest/sw.js, EN/KN/HI)
+  - phase7.spec.ts (voice check-in red flag, medication log, Cloudflare inbox webhook)
+  - phase8.spec.ts (eval benchmark, model card, clinician report, FHIR & cohort exports)
+
+CI & Deployment:
+  - .github/workflows/ci.yml             -> Runs `typecheck`, `@sentinel/shared` test, `@sentinel/web` test & build, Python `pytest`, and Playwright E2E
+  - .vercel/project.json                 -> Linked Vercel project (`ps-2-sentinel` -> https://ps-2-sentinel.vercel.app)
+================================================================================

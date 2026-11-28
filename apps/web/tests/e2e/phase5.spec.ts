@@ -107,6 +107,24 @@ test.describe('Phase 5 Multi-Role Dashboards Closed Loop E2E', () => {
     expect(axe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
     await page.screenshot({ path: resolve(EVIDENCE_DIR, 'clinician-desktop.png'), fullPage: true });
 
+    // 7. Clinician Ambient OPD Scribe (live Doctor/Patient diarization + code-mixed EN/KN/HI -> SOAP, Rx, multilingual summary & sign-off)
+    await page.getByRole('button', { name: /Ambient OPD Scribe/i }).click();
+    await page.getByRole('button', { name: /EN \+ Kannada · Fever & Cough/i }).click();
+    await expect(page.getByText(/Instant Live Extraction Preview/i)).toBeVisible();
+    await page.getByLabel('Add or speak a consultation line').fill('Do din se thoda chakkar aa raha hai.');
+    await page.getByRole('button', { name: 'Add Turn' }).click();
+    await expect(page.getByText(/Symptom: Dizziness \/ giddiness/i)).toBeVisible();
+    await page.getByRole('button', { name: /Generate Clinical Note, Rx & Summary/i }).click();
+    await expect(page.getByText(/1\. Structured SOAP Clinical Note/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/2\. Draft Prescription/i)).toBeVisible();
+    await page.getByRole('button', { name: 'ಕನ್ನಡ' }).click();
+    await expect(page.getByLabel('Patient summary in kn')).toContainText('ತಪಾಸಣೆಯ ಸಾರಾಂಶ');
+    await page.getByRole('button', { name: /Approve & Sign Consultation/i }).click();
+    await expect(page.getByText('Approved & Signed ✓')).toBeVisible({ timeout: 10_000 });
+
+    axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag22aa']).analyze();
+    expect(axe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
+
     expect(errors).toEqual([]);
   });
 });

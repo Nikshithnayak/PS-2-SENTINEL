@@ -336,6 +336,26 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS opd_consultations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  clinician_user_id text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  patient_id uuid REFERENCES patient_profiles(id) ON DELETE SET NULL,
+  patient_label text NOT NULL,
+  language_mix text NOT NULL DEFAULT 'en_kn_hi',
+  transcript text NOT NULL,
+  soap_note jsonb NOT NULL,
+  prescription_draft jsonb NOT NULL DEFAULT '[]'::jsonb,
+  patient_summary jsonb NOT NULL,
+  generator_source text NOT NULL DEFAULT 'deterministic_opd_nlp',
+  status text NOT NULL DEFAULT 'draft',
+  synced_medications_count integer NOT NULL DEFAULT 0,
+  approved_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_opd_consultations_clinician
+  ON opd_consultations(clinician_user_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS job_queue (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   job_type text NOT NULL,

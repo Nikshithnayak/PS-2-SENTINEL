@@ -8,6 +8,7 @@ import {
   FlaskConical,
   HeartHandshake,
   LineChart,
+  Mic,
   Settings,
   ShieldCheck,
   Stethoscope,
@@ -95,6 +96,7 @@ export function getRoleWorkspaceConfig(role: Role): RoleWorkspaceConfig {
             title: 'Clinical Decision Support',
             items: [
               { href: '/clinician', label: 'Cohort Triage', icon: Stethoscope },
+              { href: '/clinician/scribe', label: 'OPD Scribe', icon: Mic },
               { href: '/signals', label: 'Signals Explorer', icon: LineChart },
               { href: '/clinician/report', label: 'SBAR & FHIR Reports', icon: FileText },
               { href: '/alerts', label: 'Escalation Ledger', icon: BellRing },
@@ -119,6 +121,7 @@ export function getRoleWorkspaceConfig(role: Role): RoleWorkspaceConfig {
           { href: '/eval', label: 'Eval Lab', icon: FlaskConical },
         ],
         mobileQuickLinks: [
+          { href: '/clinician/scribe', label: 'Ambient OPD Scribe', icon: Mic },
           { href: '/clinician/report', label: 'PDF / FHIR R4', icon: FileText },
           { href: '/eval', label: 'Evaluation Lab', icon: FlaskConical },
           { href: '/model-card', label: 'Model Card', icon: BookOpen },

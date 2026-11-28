@@ -379,6 +379,58 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export interface OpdSoapNoteData {
+  chiefComplaint: string;
+  subjectiveHpi: string;
+  objectiveExam: string;
+  vitalsSummary: string;
+  assessment: string;
+  planAndFollowUp: string;
+  languagesDetected: string[];
+  redFlags: string[];
+  investigations: string[];
+}
+
+export interface OpdPrescriptionItemData {
+  drugName: string;
+  strength: string;
+  route: string;
+  frequency: string;
+  timing: string;
+  durationDays: number;
+  instructions: string;
+  rxcui: string | null;
+  affectsHeartRate: boolean;
+}
+
+export interface OpdPatientSummaryData {
+  en: string;
+  kn: string;
+  hi: string;
+  followUpWhen: string;
+  warningSigns: string[];
+}
+
+export const opdConsultations = pgTable('opd_consultations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clinicianUserId: text('clinician_user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  patientId: uuid('patient_id').references(() => patientProfiles.id, { onDelete: 'set null' }),
+  patientLabel: text('patient_label').notNull(),
+  languageMix: text('language_mix').notNull().default('en_kn_hi'),
+  transcript: text('transcript').notNull(),
+  soapNote: jsonb('soap_note').$type<OpdSoapNoteData>().notNull(),
+  prescriptionDraft: jsonb('prescription_draft').$type<OpdPrescriptionItemData[]>().notNull().default([]),
+  patientSummary: jsonb('patient_summary').$type<OpdPatientSummaryData>().notNull(),
+  generatorSource: text('generator_source').notNull().default('deterministic_opd_nlp'),
+  status: text('status').notNull().default('draft'), // draft, approved
+  syncedMedicationsCount: integer('synced_medications_count').notNull().default(0),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const jobQueue = pgTable('job_queue', {
   id: uuid('id').primaryKey().defaultRandom(),
   jobType: text('job_type').notNull(),
