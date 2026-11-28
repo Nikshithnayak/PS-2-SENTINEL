@@ -184,6 +184,7 @@ export function VitalsChart({
           type: 'line',
           smooth: 0.28,
           showSymbol: points.length <= 48,
+          symbolSize: points.length <= 3 ? 10 : 6,
           data: seriesData,
           lineStyle: { color: '#1b3c53', width: 2.5 },
           itemStyle: { color: '#1b3c53' },

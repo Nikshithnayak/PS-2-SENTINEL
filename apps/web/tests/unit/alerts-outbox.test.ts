@@ -407,12 +407,15 @@ describe('Phase 4 Anti-Fatigue Policy, Escalation Ladder & Transactional Outbox'
 
     // Register caregiver push subscription & check readiness summary accurately counts it
     await withSystemDb((tx) =>
-      tx.insert(pushSubscriptions).values({
-        userId: SEED_IDS.caregiverUserId,
-        endpoint: 'https://fcm.googleapis.com/fcm/send/fake-caregiver-endpoint-unit',
-        p256dh: 'unit-test-p256dh-key-123456',
-        auth: 'unit-test-auth',
-      }),
+      tx
+        .insert(pushSubscriptions)
+        .values({
+          userId: SEED_IDS.caregiverUserId,
+          endpoint: 'https://fcm.googleapis.com/fcm/send/fake-caregiver-endpoint-unit',
+          p256dh: 'unit-test-p256dh-key-123456',
+          auth: 'unit-test-auth',
+        })
+        .onConflictDoNothing(),
     );
 
     const readiness = await getNotificationReadiness({

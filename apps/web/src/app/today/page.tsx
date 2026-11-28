@@ -7,6 +7,7 @@ import {
   Activity,
   AlertTriangle,
   BellRing,
+  Bluetooth,
   CheckCircle2,
   Eye,
   HeartPulse,
@@ -22,6 +23,7 @@ import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { SleepQualityCard } from '@/components/health/sleep-quality-card';
 import { StatusBadge } from '@/components/health/status-badge';
+import { useBleWatch } from '@/components/ingest/ble-watch-provider';
 import { SentinelShell } from '@/components/sentinel-shell';
 import { VoiceCheckinCompanion } from '@/components/voice/voice-checkin';
 
@@ -147,6 +149,19 @@ const TREND_METRICS = [
 
 export default function PatientTodayPage() {
   const qc = useQueryClient();
+  const {
+    bleStatus,
+    watchName,
+    batteryPct,
+    liveBpm,
+    liveSpo2,
+    liveHrv,
+    bufferedCount,
+    autoSavedCount,
+    syncingBle,
+    disconnectBleWatch,
+    flushBleSamples,
+  } = useBleWatch();
   const [lang, setLang] = useState<'en' | 'kn' | 'hi'>('en');
   const [chartMetric, setChartMetric] = useState<string>('resting_heart_rate');
   const [chartWindow, setChartWindow] = useState<'24h' | '7d' | '30d'>('7d');
@@ -513,6 +528,76 @@ export default function PatientTodayPage() {
                   </div>
                 </div>
 
+                {(bleStatus === 'connected' ||
+                  bleStatus === 'reconnecting' ||
+                  liveBpm !== null ||
+                  liveSpo2 !== null ||
+                  bufferedCount > 0) && (
+                  <div className="clinical-card border border-[var(--status-stable)] p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Bluetooth className="h-4 w-4 text-[var(--status-stable)]" aria-hidden="true" />
+                        <span className="text-sm font-bold text-[var(--text-primary)]">
+                          {watchName ?? 'Bluetooth Watch'}
+                          {batteryPct !== null ? ` · ${batteryPct}%` : ''}
+                        </span>
+                        <span className="rounded-full bg-[var(--status-stable-bg)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--status-stable)]">
+                          {bleStatus === 'reconnecting' ? 'Reconnecting…' : 'Live Connected'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {bufferedCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => void flushBleSamples(false)}
+                            disabled={syncingBle}
+                            className="min-h-8 rounded-full bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-[var(--brand-primary-fg)] disabled:opacity-50 cursor-pointer"
+                          >
+                            {syncingBle ? 'Syncing…' : `Sync ${bufferedCount} Now`}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={disconnectBleWatch}
+                          className="min-h-8 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] cursor-pointer"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-2.5 flex flex-wrap gap-4 text-xs text-[var(--text-muted)]">
+                      <span>
+                        Live HR:{' '}
+                        <strong className="font-[family-name:var(--font-mono)] text-[var(--text-primary)]">
+                          {liveBpm !== null ? `${liveBpm} bpm` : '—'}
+                        </strong>
+                      </span>
+                      {liveSpo2 !== null && (
+                        <span>
+                          SpO₂:{' '}
+                          <strong className="font-[family-name:var(--font-mono)] text-[var(--text-primary)]">
+                            {liveSpo2}%
+                          </strong>
+                        </span>
+                      )}
+                      {liveHrv !== null && (
+                        <span>
+                          HRV:{' '}
+                          <strong className="font-[family-name:var(--font-mono)] text-[var(--text-primary)]">
+                            {liveHrv} ms
+                          </strong>
+                        </span>
+                      )}
+                      <span>
+                        Saved to Overview:{' '}
+                        <strong className="font-[family-name:var(--font-mono)] text-[var(--text-primary)]">
+                          {autoSavedCount}
+                        </strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="clinical-card p-5">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div>
@@ -584,13 +669,19 @@ export default function PatientTodayPage() {
                       <span>Resting Heart Rate</span>
                     </div>
                     <p className="mt-2 font-[family-name:var(--font-mono)] text-3xl font-bold tabular-nums">
-                      {latestRhr ? `${latestRhr.value} bpm` : '—'}
+                      {liveBpm !== null
+                        ? `${liveBpm} bpm`
+                        : latestRhr
+                          ? `${latestRhr.value} bpm`
+                          : '—'}
                     </p>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">
-                      {rhrQuery.data?.baseline?.bandLow != null &&
-                        rhrQuery.data?.baseline?.bandHigh != null
-                        ? `Your normal: ${rhrQuery.data.baseline.bandLow}–${rhrQuery.data.baseline.bandHigh} bpm`
-                        : 'Personal baseline learning'}
+                      {liveBpm !== null
+                        ? `Live from ${watchName ?? 'Bluetooth Watch'}`
+                        : rhrQuery.data?.baseline?.bandLow != null &&
+                            rhrQuery.data?.baseline?.bandHigh != null
+                          ? `Your normal: ${rhrQuery.data.baseline.bandLow}–${rhrQuery.data.baseline.bandHigh} bpm`
+                          : 'Personal baseline learning'}
                     </p>
                   </article>
 
@@ -600,13 +691,19 @@ export default function PatientTodayPage() {
                       <span>SpO₂ Oxygen Level</span>
                     </div>
                     <p className="mt-2 font-[family-name:var(--font-mono)] text-3xl font-bold tabular-nums">
-                      {latestSpo2 ? `${latestSpo2.value}%` : '—'}
+                      {liveSpo2 !== null
+                        ? `${liveSpo2}%`
+                        : latestSpo2
+                          ? `${latestSpo2.value}%`
+                          : '—'}
                     </p>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">
-                      {spo2Query.data?.baseline?.bandLow != null &&
-                        spo2Query.data?.baseline?.bandHigh != null
-                        ? `Your normal: ${spo2Query.data.baseline.bandLow}–${spo2Query.data.baseline.bandHigh}%`
-                        : 'Personal baseline learning'}
+                      {liveSpo2 !== null
+                        ? `Live from ${watchName ?? 'Bluetooth Watch'}`
+                        : spo2Query.data?.baseline?.bandLow != null &&
+                            spo2Query.data?.baseline?.bandHigh != null
+                          ? `Your normal: ${spo2Query.data.baseline.bandLow}–${spo2Query.data.baseline.bandHigh}%`
+                          : 'Personal baseline learning'}
                     </p>
                   </article>
                 </div>

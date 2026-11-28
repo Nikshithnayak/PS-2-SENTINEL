@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import QRCode from 'qrcode';
 import {
   Activity,
@@ -16,24 +16,7 @@ import {
   Watch,
   Webhook,
 } from 'lucide-react';
-import type { VitalSampleInput } from '@sentinel/shared';
-import {
-  computeRmssdFromRrIntervals,
-  parseBleHeartRateMeasurement,
-  parseBlePulseOximeterMeasurement,
-} from '@/lib/ingestion/watch-normalizer';
-import {
-  buildRequestDeviceOptions,
-  checkBleAvailability,
-  connectGattWithRetry,
-  discoverWatchServices,
-  formatBleConnectionError,
-  type BleEnvironmentStatus,
-  type BleScanMode,
-  type BluetoothDeviceLike,
-  type GattCharacteristicLike,
-  type NavigatorBluetoothLike,
-} from '@/lib/ingestion/ble-watch';
+import { useBleWatch } from '@/components/ingest/ble-watch-provider';
 
 export interface AdapterHealthSummary {
   configured: boolean;
@@ -84,16 +67,31 @@ export function WatchSyncHub({
   googleConnectors,
   onSyncComplete,
 }: WatchSyncHubProps) {
-  const bleSupported = useSyncExternalStore(
-    subscribeNoop,
-    () => typeof navigator !== 'undefined' && 'bluetooth' in navigator,
-    () => false,
-  );
   const origin = useSyncExternalStore(
     subscribeNoop,
     () => (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'),
     () => 'http://localhost:3000',
   );
+  const {
+    bleSupported,
+    bleScanMode,
+    setBleScanMode,
+    bleEnv,
+    bleStatus,
+    bleMessage,
+    watchName,
+    batteryPct,
+    liveBpm,
+    liveHrv,
+    liveSpo2,
+    contactDetected,
+    bufferedCount,
+    autoSavedCount,
+    syncingBle,
+    connectBleWatch,
+    disconnectBleWatch,
+    flushBleSamples,
+  } = useBleWatch();
   const [platform, setPlatform] = useState<CompanionPlatform>('android');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -106,114 +104,10 @@ export function WatchSyncHub({
   // Google Fit / Health OAuth disconnect state
   const [disconnectingMode, setDisconnectingMode] = useState<string | null>(null);
 
-  // BLE Live Watch state
-  const [bleScanMode, setBleScanMode] = useState<BleScanMode>('all_devices');
-  const [bleEnv, setBleEnv] = useState<BleEnvironmentStatus>({
-    supported: bleSupported,
-    adapterAvailable: bleSupported,
-    badgeLabel: bleSupported ? 'Browser Ready' : 'Unsupported Browser',
-    reason: null,
-  });
-  const [bleStatus, setBleStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
-  const [bleMessage, setBleMessage] = useState<string | null>(null);
-  const [watchName, setWatchName] = useState<string | null>(null);
-  const [batteryPct, setBatteryPct] = useState<number | null>(null);
-  const [liveBpm, setLiveBpm] = useState<number | null>(null);
-  const [liveHrv, setLiveHrv] = useState<number | null>(null);
-  const [liveSpo2, setLiveSpo2] = useState<number | null>(null);
-  const [contactDetected, setContactDetected] = useState<boolean | null>(null);
-  const [bufferedCount, setBufferedCount] = useState(0);
-  const [autoSavedCount, setAutoSavedCount] = useState(0);
-  const [syncingBle, setSyncingBle] = useState(false);
-
   // Cloud Adapter Sync state
   const [syncingProvider, setSyncingProvider] = useState<string | null>(null);
   const [providerResult, setProviderResult] = useState<string | null>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
-
-  const deviceRef = useRef<BluetoothDeviceLike | null>(null);
-  const hrCharRef = useRef<GattCharacteristicLike | null>(null);
-  const plxCharRef = useRef<GattCharacteristicLike | null>(null);
-  const hrListenerRef = useRef<((ev: { target: GattCharacteristicLike }) => void) | null>(null);
-  const plxListenerRef = useRef<((ev: { target: GattCharacteristicLike }) => void) | null>(null);
-  const disconnectListenerRef = useRef<(() => void) | null>(null);
-  const samplesBufferRef = useRef<VitalSampleInput[]>([]);
-  const rrWindowRef = useRef<number[]>([]);
-  const lastSampleMsRef = useRef<number>(0);
-  const flushingBleRef = useRef<boolean>(false);
-
-  function nextMonotonicIso(): string {
-    const now = Date.now();
-    const nextMs = now > lastSampleMsRef.current ? now : lastSampleMsRef.current + 1;
-    lastSampleMsRef.current = nextMs;
-    return new Date(nextMs).toISOString();
-  }
-
-  function cleanupBleHandles() {
-    if (hrCharRef.current && hrListenerRef.current) {
-      hrCharRef.current.removeEventListener('characteristicvaluechanged', hrListenerRef.current);
-      void hrCharRef.current.stopNotifications?.().catch(() => {});
-    }
-    if (plxCharRef.current && plxListenerRef.current) {
-      plxCharRef.current.removeEventListener('characteristicvaluechanged', plxListenerRef.current);
-      void plxCharRef.current.stopNotifications?.().catch(() => {});
-    }
-    if (deviceRef.current && disconnectListenerRef.current) {
-      deviceRef.current.removeEventListener?.(
-        'gattserverdisconnected',
-        disconnectListenerRef.current,
-      );
-    }
-    if (deviceRef.current?.gatt?.connected) {
-      deviceRef.current.gatt.disconnect();
-    }
-    hrCharRef.current = null;
-    plxCharRef.current = null;
-    hrListenerRef.current = null;
-    plxListenerRef.current = null;
-    disconnectListenerRef.current = null;
-    deviceRef.current = null;
-    rrWindowRef.current = [];
-  }
-
-  useEffect(() => {
-    let active = true;
-    const nav =
-      typeof navigator !== 'undefined'
-        ? (navigator as unknown as { bluetooth?: NavigatorBluetoothLike })
-        : undefined;
-    const secure = typeof window !== 'undefined' ? window.isSecureContext : true;
-
-    const refreshAvailability = () => {
-      void checkBleAvailability(nav, secure).then((env) => {
-        if (active) setBleEnv(env);
-      });
-    };
-    refreshAvailability();
-
-    const onAvailabilityChange = () => refreshAvailability();
-    nav?.bluetooth?.addEventListener?.('availabilitychanged', onAvailabilityChange);
-
-    return () => {
-      active = false;
-      nav?.bluetooth?.removeEventListener?.('availabilitychanged', onAvailabilityChange);
-      if (patientId && samplesBufferRef.current.length > 0) {
-        const trailing = samplesBufferRef.current.splice(0, samplesBufferRef.current.length);
-        void fetch('/api/v1/ingest', {
-          method: 'POST',
-          keepalive: true,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            patientId,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
-            evaluate: true,
-            samples: trailing,
-          }),
-        }).catch(() => {});
-      }
-      cleanupBleHandles();
-    };
-  }, [patientId]);
 
   async function copyText(key: string, text: string) {
     try {
@@ -278,236 +172,6 @@ export function WatchSyncHub({
     } finally {
       setDisconnectingMode(null);
     }
-  }
-
-  async function flushBleSamples(silent = false) {
-    if (!patientId || samplesBufferRef.current.length === 0 || flushingBleRef.current) return;
-    flushingBleRef.current = true;
-    const toSend = samplesBufferRef.current.splice(0, samplesBufferRef.current.length);
-    setBufferedCount(0);
-    setSyncingBle(true);
-    try {
-      const res = await fetch('/api/v1/ingest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patientId,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
-          evaluate: true,
-          samples: toSend,
-        }),
-      });
-      const body = (await res.json()) as { recordsAccepted?: number; error?: string };
-      if (!res.ok) {
-        samplesBufferRef.current.unshift(...toSend);
-        setBufferedCount(samplesBufferRef.current.length);
-        setBleStatus('error');
-        setBleMessage(body.error ?? 'Failed to save BLE watch samples');
-        return;
-      }
-      const saved = body.recordsAccepted ?? toSend.length;
-      setAutoSavedCount((prev) => prev + saved);
-      if (!silent) {
-        setBleMessage(`Saved ${saved} real watch reading(s) cleanly.`);
-      }
-      onSyncComplete();
-    } catch {
-      samplesBufferRef.current.unshift(...toSend);
-      setBufferedCount(samplesBufferRef.current.length);
-      setBleStatus('error');
-      setBleMessage('Network error while uploading BLE watch readings.');
-    } finally {
-      flushingBleRef.current = false;
-      setSyncingBle(false);
-    }
-  }
-
-  async function connectBleWatch(overrideMode?: BleScanMode) {
-    if (!patientId) return;
-    const scanMode = overrideMode ?? bleScanMode;
-    if (overrideMode) setBleScanMode(overrideMode);
-
-    const nav =
-      typeof navigator !== 'undefined'
-        ? (navigator as unknown as { bluetooth?: NavigatorBluetoothLike })
-        : undefined;
-    const secure = typeof window !== 'undefined' ? window.isSecureContext : true;
-    const freshEnv = await checkBleAvailability(nav, secure);
-    setBleEnv(freshEnv);
-
-    if (!freshEnv.supported || !nav?.bluetooth) {
-      setBleStatus('error');
-      setBleMessage(freshEnv.reason ?? 'Web Bluetooth is unavailable in this browser.');
-      return;
-    }
-
-    if (!freshEnv.adapterAvailable) {
-      setBleStatus('error');
-      setBleMessage(
-        freshEnv.reason ??
-          'Bluetooth adapter is turned off. Enable Bluetooth in Settings and tap Pair again.',
-      );
-      return;
-    }
-
-    cleanupBleHandles();
-    setBleStatus('connecting');
-    setBleMessage(null);
-    setLiveSpo2(null);
-
-    try {
-      const device = await nav.bluetooth.requestDevice(buildRequestDeviceOptions(scanMode));
-      deviceRef.current = device;
-      const initialLabel = device.name?.trim() || 'Bluetooth Watch';
-      setWatchName(initialLabel);
-
-      const onDisconnected = () => {
-        if (samplesBufferRef.current.length > 0) {
-          void flushBleSamples(true);
-        }
-        setBleStatus('idle');
-        setBleMessage((prev) =>
-          prev && prev.includes('proprietary') ? prev : `${initialLabel} disconnected.`,
-        );
-      };
-      disconnectListenerRef.current = onDisconnected;
-      device.addEventListener('gattserverdisconnected', onDisconnected);
-
-      const server = await connectGattWithRetry(device, 2, 450);
-      const discovered = await discoverWatchServices(server, device.name);
-      const watchLabel = discovered.watchLabel;
-      setWatchName(watchLabel);
-      setBatteryPct(discovered.batteryPct);
-
-      if (!discovered.hrChar && !discovered.plxChar) {
-        cleanupBleHandles();
-        setBleStatus('error');
-        const batteryHint =
-          discovered.batteryPct !== null ? ` (Battery ${discovered.batteryPct}%)` : '';
-        const vendorHint = discovered.vendorDiagnosis
-          ? `Detected ${discovered.vendorDiagnosis} rather than open BLE Heart Rate (0x180D) or Pulse Oximeter (0x1822).`
-          : 'This watch did not expose open BLE Heart Rate (0x180D) or Pulse Oximeter (0x1822) GATT services.';
-        setBleMessage(
-          `Bluetooth connected to "${watchLabel}"${batteryHint} — ${vendorHint} Turn on "Heart Rate Broadcast" in your watch settings if supported (Garmin/Coros/Polar/Amazfit/Wear OS), or keep it paired with your phone app and sync via Android Health Connect / Google Fit above.`,
-        );
-        return;
-      }
-
-      const activeStreams: string[] = [];
-
-      if (discovered.hrChar) {
-        hrCharRef.current = discovered.hrChar;
-        const onHrPacket = (ev: { target: GattCharacteristicLike }) => {
-          const view = ev.target.value;
-          if (!view) return;
-          const reading = parseBleHeartRateMeasurement(view);
-          const recordedAt = nextMonotonicIso();
-
-          setLiveBpm(reading.bpm);
-          setContactDetected(reading.contactDetected);
-
-          if (reading.rrIntervalsMs.length > 0) {
-            rrWindowRef.current = [...rrWindowRef.current, ...reading.rrIntervalsMs].slice(-30);
-          }
-          const hrv = computeRmssdFromRrIntervals(rrWindowRef.current);
-          if (hrv !== null) setLiveHrv(hrv);
-
-          samplesBufferRef.current.push({
-            metricType: 'heart_rate',
-            value: reading.bpm,
-            unit: 'bpm',
-            recordedAt,
-            context: 'rest',
-            source: 'open_ingest_api',
-            deviceModel: watchLabel,
-            isSynthetic: false,
-          });
-          if (hrv !== null && reading.rrIntervalsMs.length > 0) {
-            samplesBufferRef.current.push({
-              metricType: 'hrv_rmssd',
-              value: hrv,
-              unit: 'ms',
-              recordedAt,
-              context: 'rest',
-              source: 'open_ingest_api',
-              deviceModel: watchLabel,
-              isSynthetic: false,
-            });
-          }
-          setBufferedCount(samplesBufferRef.current.length);
-          if (samplesBufferRef.current.length >= 10) {
-            void flushBleSamples(true);
-          }
-        };
-        hrListenerRef.current = onHrPacket;
-        discovered.hrChar.addEventListener('characteristicvaluechanged', onHrPacket);
-        await discovered.hrChar.startNotifications();
-        activeStreams.push('Heart Rate (0x180D)');
-      }
-
-      if (discovered.plxChar) {
-        plxCharRef.current = discovered.plxChar;
-        const onPlxPacket = (ev: { target: GattCharacteristicLike }) => {
-          const view = ev.target.value;
-          if (!view) return;
-          const reading = parseBlePulseOximeterMeasurement(view);
-          const recordedAt = nextMonotonicIso();
-
-          if (reading.spo2 !== null) {
-            setLiveSpo2(reading.spo2);
-            samplesBufferRef.current.push({
-              metricType: 'spo2',
-              value: reading.spo2,
-              unit: '%',
-              recordedAt,
-              context: 'rest',
-              source: 'open_ingest_api',
-              deviceModel: watchLabel,
-              isSynthetic: false,
-            });
-          }
-          if (reading.pulseRate !== null && !discovered.hrChar) {
-            setLiveBpm(reading.pulseRate);
-            samplesBufferRef.current.push({
-              metricType: 'heart_rate',
-              value: reading.pulseRate,
-              unit: 'bpm',
-              recordedAt,
-              context: 'rest',
-              source: 'open_ingest_api',
-              deviceModel: watchLabel,
-              isSynthetic: false,
-            });
-          }
-          setBufferedCount(samplesBufferRef.current.length);
-          if (samplesBufferRef.current.length >= 10) {
-            void flushBleSamples(true);
-          }
-        };
-        plxListenerRef.current = onPlxPacket;
-        discovered.plxChar.addEventListener('characteristicvaluechanged', onPlxPacket);
-        await discovered.plxChar.startNotifications();
-        activeStreams.push('SpO₂ (0x1822)');
-      }
-
-      setBleStatus('connected');
-      setBleMessage(
-        `Streaming live ${activeStreams.join(' + ')} from ${watchLabel}. Auto-saves every 10 readings.`,
-      );
-    } catch (err) {
-      cleanupBleHandles();
-      setBleStatus('error');
-      setBleMessage(formatBleConnectionError(err, scanMode));
-    }
-  }
-
-  function disconnectBleWatch() {
-    if (samplesBufferRef.current.length > 0) {
-      void flushBleSamples(true);
-    }
-    cleanupBleHandles();
-    setBleStatus('idle');
-    setBleMessage('Disconnected from Bluetooth watch.');
   }
 
   async function triggerProviderSync(provider: string, unconfiguredMessage?: string) {
@@ -905,12 +569,18 @@ export function WatchSyncHub({
                 className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                   bleStatus === 'connected'
                     ? 'border-[var(--status-stable)] bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
-                    : !bleEnv.supported || !bleEnv.adapterAvailable
+                    : bleStatus === 'reconnecting'
                       ? 'border-[var(--status-watch)] bg-[var(--status-watch-bg)] text-[var(--status-watch)]'
-                      : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
+                      : !bleEnv.supported || !bleEnv.adapterAvailable
+                        ? 'border-[var(--status-watch)] bg-[var(--status-watch-bg)] text-[var(--status-watch)]'
+                        : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
                 }`}
               >
-                {bleStatus === 'connected' ? 'Live Stream' : bleEnv.badgeLabel}
+                {bleStatus === 'connected'
+                  ? 'Live Stream'
+                  : bleStatus === 'reconnecting'
+                    ? 'Reconnecting…'
+                    : bleEnv.badgeLabel}
               </span>
             </div>
 
@@ -1025,7 +695,7 @@ export function WatchSyncHub({
                 {bleStatus === 'error' && bleScanMode === 'health_services' && bleSupported && (
                   <button
                     type="button"
-                    onClick={() => void connectBleWatch('all_devices')}
+                    onClick={() => patientId && void connectBleWatch(patientId, 'all_devices')}
                     className="inline-flex min-h-8 items-center rounded-full border border-current px-3 py-1 text-xs font-semibold hover:opacity-80 cursor-pointer"
                   >
                     Switch to &quot;All Nearby Watches&quot; &amp; Retry
@@ -1036,7 +706,7 @@ export function WatchSyncHub({
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
-            {bleStatus === 'connected' ? (
+            {bleStatus === 'connected' || bleStatus === 'reconnecting' ? (
               <>
                 <button
                   type="button"
@@ -1064,7 +734,7 @@ export function WatchSyncHub({
             ) : (
               <button
                 type="button"
-                onClick={() => void connectBleWatch()}
+                onClick={() => patientId && void connectBleWatch(patientId)}
                 disabled={!bleSupported || !patientId || bleStatus === 'connecting'}
                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--brand-primary)] px-5 py-2 text-xs font-semibold text-[var(--brand-primary-fg)] disabled:opacity-50 cursor-pointer"
               >
