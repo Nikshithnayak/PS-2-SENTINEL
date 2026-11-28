@@ -431,9 +431,30 @@ export async function maybeTriggerAlertFromEvaluation(params: {
     decision.effectiveLevel === 'urgent'
       ? ` If unresponsive or severe symptoms: call Emergency ${ctx.profile.emergencyNumber} or Ambulance ${ctx.profile.ambulanceNumber}.`
       : '';
+
+  const leadDriver = evaluation.contributions[0];
+  const driverDetail = leadDriver
+    ? ` Primary signal: ${leadDriver.label} at ${leadDriver.observed}${leadDriver.unit ? ` ${leadDriver.unit}` : ''} (personal normal ${leadDriver.normalLow}–${leadDriver.normalHigh}${leadDriver.unit ? ` ${leadDriver.unit}` : ''}).`
+    : '';
+  const activeLayers: string[] = [];
+  if (evaluation.l1Score >= 20) activeLayers.push('L1 Safety');
+  if (evaluation.l2Score >= 20) activeLayers.push('L2 Personal Temporal');
+  if (evaluation.l3Score >= 20) activeLayers.push('L3 Multivariate');
+  const layerDetail = activeLayers.length ? ` Layers: ${activeLayers.join(' + ')}.` : '';
+  const firstNoticeIso = evaluation.changePoints?.[0];
+  const firstNoticeDetail = firstNoticeIso
+    ? ` First shift noticed ${firstNoticeIso.slice(0, 16).replace('T', ' ')} UTC.`
+    : '';
+  const nextActionNote =
+    decision.effectiveLevel === 'urgent'
+      ? ' Please check how the person feels right away and arrange clinician review (early awareness notice, not a medical diagnosis).'
+      : decision.effectiveLevel === 'warning'
+        ? ' Next step: rest comfortably, re-check readings after sitting quietly, and update a caregiver or doctor if symptoms are present (early awareness notice, not a diagnosis).'
+        : ' Next step: keep wearing the sensor calmly and re-check on the next reading (early awareness notice, not a diagnosis).';
+
   const summaryEn = evaluation.deviceSilent
-    ? 'No recent wearable readings synced — check watch battery, Bluetooth, or phone Health Connect sync.'
-    : `${evaluation.summaryText}${emergencyNote}`;
+    ? 'No recent wearable readings synced — check watch battery, Bluetooth, or phone Health Connect sync. SENTINEL only monitors telemetry and never diagnoses medical conditions.'
+    : `${evaluation.summaryText}${driverDetail}${layerDetail}${firstNoticeDetail}${nextActionNote}${emergencyNote}`;
   const bodyText = summaryEn;
 
   let alertId = decision.existingAlertId ?? null;

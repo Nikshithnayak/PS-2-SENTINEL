@@ -4,6 +4,10 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarOff, LineChart, Trash2 } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
+import {
+  DetectionTimelineCard,
+  type PersistedDetectionTimeline,
+} from '@/components/health/detection-timeline-card';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { SentinelShell } from '@/components/sentinel-shell';
 
@@ -62,6 +66,19 @@ export default function SignalExplorerPage() {
     enabled: !seriesQuery.isError,
     queryFn: async () => {
       const res = await fetch('/api/v1/exclusions');
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    },
+  });
+
+  const dashboardQuery = useQuery<{
+    isSynthetic?: boolean;
+    detectionTimeline?: PersistedDetectionTimeline | null;
+  }>({
+    queryKey: ['signals-detection-timeline'],
+    enabled: !seriesQuery.isError,
+    queryFn: async () => {
+      const res = await fetch('/api/v1/dashboard/patient');
       if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
@@ -260,6 +277,11 @@ export default function SignalExplorerPage() {
                 </div>
               </section>
             </div>
+
+            <DetectionTimelineCard
+              timeline={dashboardQuery.data?.detectionTimeline}
+              isSynthetic={hasSynthetic || dashboardQuery.data?.isSynthetic}
+            />
           </>
         )}
       </main>

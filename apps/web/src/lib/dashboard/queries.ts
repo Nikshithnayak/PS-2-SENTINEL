@@ -62,6 +62,33 @@ export async function loadPatientDashboard(patientId: string) {
         .orderBy(desc(riskAssessments.assessedAt))
         .limit(2);
 
+      const timelineAssessments = await tx
+        .select({
+          id: riskAssessments.id,
+          assessedAt: riskAssessments.assessedAt,
+          deteriorationIndex: riskAssessments.deteriorationIndex,
+          level: riskAssessments.level,
+          l1Score: riskAssessments.l1Score,
+          l2Score: riskAssessments.l2Score,
+          l3Score: riskAssessments.l3Score,
+          contributions: riskAssessments.contributions,
+          explanationEn: riskAssessments.explanationEn,
+        })
+        .from(riskAssessments)
+        .where(eq(riskAssessments.patientId, patientId))
+        .orderBy(asc(riskAssessments.assessedAt))
+        .limit(60);
+
+      const timelineDecisionLogs = await tx
+        .select({
+          assessedAt: detectorDecisionLogs.assessedAt,
+          decisionPayload: detectorDecisionLogs.decisionPayload,
+        })
+        .from(detectorDecisionLogs)
+        .where(eq(detectorDecisionLogs.patientId, patientId))
+        .orderBy(asc(detectorDecisionLogs.assessedAt))
+        .limit(30);
+
       const baselines = await tx
         .select()
         .from(baselineStates)
@@ -113,11 +140,137 @@ export async function loadPatientDashboard(patientId: string) {
         .where(and(eq(vitalSamples.patientId, patientId), eq(vitalSamples.isSynthetic, true)))
         .limit(1);
 
+      const timelineRows = timelineAssessments.map((a) => {
+        const layers: string[] = [];
+        if (a.l1Score >= 20) layers.push('L1 Safety');
+        if (a.l2Score >= 20) layers.push('L2 Personal Temporal');
+        if (a.l3Score >= 20) layers.push('L3 Multivariate');
+        const topContrib = Array.isArray(a.contributions)
+          ? (a.contributions[0] as { label?: unknown } | undefined)
+          : undefined;
+        return {
+          ...a,
+          layers,
+          metric: typeof topContrib?.label === 'string' ? topContrib.label : 'Multi-signal pattern',
+        };
+      });
+
+      const recordedChangePoints = timelineDecisionLogs
+        .flatMap((d) => {
+          const payload = d.decisionPayload as { changePoints?: string[] } | null;
+          return payload?.changePoints ?? [];
+        })
+        .filter((s) => typeof s === 'string' && !Number.isNaN(Date.parse(s)))
+        .sort();
+
+      const firstElevated = timelineRows.find((r) => r.level !== 'stable' || r.deteriorationIndex >= 30);
+      const firstAlertAsc = [...alertList].sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      )[0];
+      const firstDetectionAt =
+        firstElevated?.assessedAt.toISOString() ??
+        recordedChangePoints[0] ??
+        firstAlertAsc?.createdAt.toISOString() ??
+        null;
+
+      const recoveredRow = firstDetectionAt
+        ? timelineRows.find(
+            (r) =>
+              r.assessedAt.getTime() > Date.parse(firstDetectionAt) &&
+              r.level === 'stable' &&
+              r.deteriorationIndex < 30,
+          )
+        : null;
+
+      const phase: 'baseline_only' | 'first_detection' | 'confirmed_alert' | 'recovered' = recoveredRow
+        ? 'recovered'
+        : firstAlertAsc
+          ? 'confirmed_alert'
+          : firstDetectionAt
+            ? 'first_detection'
+            : 'baseline_only';
+
+      const events: Array<{
+        timestamp: string;
+        stage: 'baseline' | 'first_detection' | 'confirmed_alert' | 'monitoring' | 'recovered';
+        level: string;
+        index: number;
+        metric: string;
+        layers: string[];
+        reason: string;
+        alertStatus?: string;
+      }> = [];
+
+      if (timelineRows[0]) {
+        const firstRow = timelineRows[0];
+        if (firstRow.level === 'stable' && firstRow.deteriorationIndex < 30) {
+          events.push({
+            timestamp: firstRow.assessedAt.toISOString(),
+            stage: 'baseline',
+            level: firstRow.level,
+            index: firstRow.deteriorationIndex,
+            metric: firstRow.metric,
+            layers: firstRow.layers,
+            reason: firstRow.explanationEn,
+          });
+        }
+      }
+      if (firstElevated) {
+        events.push({
+          timestamp: firstElevated.assessedAt.toISOString(),
+          stage: 'first_detection',
+          level: firstElevated.level,
+          index: firstElevated.deteriorationIndex,
+          metric: firstElevated.metric,
+          layers: firstElevated.layers,
+          reason: firstElevated.explanationEn,
+        });
+      }
+      if (firstAlertAsc) {
+        events.push({
+          timestamp: firstAlertAsc.createdAt.toISOString(),
+          stage: 'confirmed_alert',
+          level: firstAlertAsc.level,
+          index: latestAssessments[0]?.deteriorationIndex ?? firstElevated?.deteriorationIndex ?? 0,
+          metric: firstElevated?.metric ?? 'Multi-signal pattern',
+          layers: firstElevated?.layers ?? [],
+          reason: firstAlertAsc.summaryEn,
+          alertStatus: firstAlertAsc.status,
+        });
+      }
+      if (recoveredRow) {
+        events.push({
+          timestamp: recoveredRow.assessedAt.toISOString(),
+          stage: 'recovered',
+          level: recoveredRow.level,
+          index: recoveredRow.deteriorationIndex,
+          metric: recoveredRow.metric,
+          layers: recoveredRow.layers,
+          reason: recoveredRow.explanationEn,
+        });
+      }
+      events.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+
+      const detectionTimeline = {
+        phase,
+        firstDetectionAt,
+        firstDetectionMetric: firstElevated?.metric ?? null,
+        contributingLayers: firstElevated?.layers ?? [],
+        firstDetectionReason: firstElevated?.explanationEn ?? null,
+        confirmedAlertAt: firstAlertAsc?.createdAt.toISOString() ?? null,
+        confirmedAlertLevel: firstAlertAsc?.level ?? null,
+        recoveredAt: recoveredRow?.assessedAt.toISOString() ?? null,
+        latestIndex: latestAssessments[0]?.deteriorationIndex ?? 0,
+        latestLevel: latestAssessments[0]?.level ?? 'stable',
+        events,
+      };
+
       return {
         profile: profileRow.profile,
         patientFirstName: profileRow.ownerName.split(' ')[0] ?? profileRow.profile.displayCode,
         patientFullName: profileRow.ownerName,
         latestAssessment: latestAssessments[0] ?? null,
+        detectionTimeline,
         baselines,
         alerts: alertList,
         deliveries,
@@ -157,6 +310,7 @@ export async function loadPatientDashboard(patientId: string) {
     isSynthetic: data.hasSyntheticSamples || Boolean(data.latestAssessment?.isSynthetic),
     silence,
     latestAssessment: data.latestAssessment,
+    detectionTimeline: data.detectionTimeline,
     baselines: data.baselines,
     alerts: data.alerts,
     deliveries: data.deliveries,
@@ -235,7 +389,8 @@ export async function loadVitalsSeries(params: {
   const prevSince = new Date(since.getTime() - hours * 3_600_000);
 
   return withSystemDb(async (tx) => {
-    const rollups = await tx
+    let resolvedMetric = params.metricType;
+    let rollups = await tx
       .select()
       .from(vitalRollupsHourly)
       .where(
@@ -247,13 +402,38 @@ export async function loadVitalsSeries(params: {
       )
       .orderBy(asc(vitalRollupsHourly.bucketStart));
 
+    // When a wearer syncs only optical/BLE `heart_rate` (e.g., Google Fit or Web BLE 0x180D)
+    // and has zero explicit `resting_heart_rate` rows, backfill from calm heart_rate so HR
+    // charts and personal normal corridors populate seamlessly.
+    if (rollups.length === 0 && params.metricType === 'resting_heart_rate') {
+      const calmHrRollups = await tx
+        .select()
+        .from(vitalRollupsHourly)
+        .where(
+          and(
+            eq(vitalRollupsHourly.patientId, params.patientId),
+            eq(vitalRollupsHourly.metricType, 'heart_rate'),
+            inArray(vitalRollupsHourly.context, ['sleep', 'rest', 'unknown']),
+            gte(vitalRollupsHourly.bucketStart, since),
+          ),
+        )
+        .orderBy(asc(vitalRollupsHourly.bucketStart));
+      if (calmHrRollups.length > 0) {
+        rollups = calmHrRollups;
+        resolvedMetric = 'heart_rate';
+      }
+    }
+
     const prevRollups = await tx
       .select({ medianVal: vitalRollupsHourly.medianVal })
       .from(vitalRollupsHourly)
       .where(
         and(
           eq(vitalRollupsHourly.patientId, params.patientId),
-          eq(vitalRollupsHourly.metricType, params.metricType),
+          eq(vitalRollupsHourly.metricType, resolvedMetric),
+          ...(resolvedMetric === 'heart_rate' && params.metricType === 'resting_heart_rate'
+            ? [inArray(vitalRollupsHourly.context, ['sleep', 'rest', 'unknown'])]
+            : []),
           gte(vitalRollupsHourly.bucketStart, prevSince),
         ),
       );
@@ -263,7 +443,7 @@ export async function loadVitalsSeries(params: {
     const avg = (xs: number[]) =>
       xs.length ? Number((xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(2)) : null;
 
-    const [baseline] = await tx
+    let [baseline] = await tx
       .select()
       .from(baselineStates)
       .where(
@@ -273,6 +453,19 @@ export async function loadVitalsSeries(params: {
         ),
       )
       .limit(1);
+
+    if (!baseline && resolvedMetric !== params.metricType) {
+      [baseline] = await tx
+        .select()
+        .from(baselineStates)
+        .where(
+          and(
+            eq(baselineStates.patientId, params.patientId),
+            eq(baselineStates.metricType, resolvedMetric),
+          ),
+        )
+        .limit(1);
+    }
 
     const recentAlerts = await tx
       .select()
@@ -298,7 +491,10 @@ export async function loadVitalsSeries(params: {
       .where(
         and(
           eq(vitalSamples.patientId, params.patientId),
-          eq(vitalSamples.metricType, params.metricType),
+          eq(vitalSamples.metricType, resolvedMetric),
+          ...(resolvedMetric === 'heart_rate' && params.metricType === 'resting_heart_rate'
+            ? [inArray(vitalSamples.context, ['sleep', 'rest', 'unknown'])]
+            : []),
           gte(vitalSamples.recordedAt, since),
         ),
       )
@@ -331,6 +527,7 @@ export async function loadVitalsSeries(params: {
     return {
       patientId: params.patientId,
       metricType: params.metricType,
+      effectiveMetricType: resolvedMetric,
       window: params.window,
       baseline: baseline
         ? {

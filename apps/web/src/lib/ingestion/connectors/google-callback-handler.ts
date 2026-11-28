@@ -126,9 +126,9 @@ export async function handleGoogleConnectorCallback(request: NextRequest) {
     scope: tokenData.scope ?? null,
   });
 
-  // Immediately pull last 48h of vitals cleanly after connecting
+  // Immediately pull last 14 days (336h) of vitals cleanly after connecting so 14-day baseline starts learning immediately
   const endIso = new Date().toISOString();
-  const startIso = new Date(Date.now() - 48 * 3600_000).toISOString();
+  const startIso = new Date(Date.now() - 14 * 24 * 3600_000).toISOString();
   const adapter =
     parsedCookie.mode === 'google_health_api'
       ? new GoogleHealthAdapter()
@@ -144,7 +144,7 @@ export async function handleGoogleConnectorCallback(request: NextRequest) {
 
     if (samples.length === 0) {
       return redirectWithClear(
-        `${origin}/ingest?connector=${parsedCookie.mode}&synced=0`,
+        `${origin}/ingest?connector=${parsedCookie.mode}&synced=0&connector_warning=${encodeURIComponent('Google Fit authorized, but Google returned 0 readings in the last 14 days. Ensure Google Fit phone sync has stored data, or pair Android Health Connect Direct Bridge next to this card.')}`,
       );
     }
 

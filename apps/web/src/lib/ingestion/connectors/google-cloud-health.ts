@@ -32,6 +32,7 @@ export interface GoogleConnectorOAuthConfig {
 export interface GoogleConnectorConnectionStatus {
   mode: GoogleHealthMode;
   connected: boolean;
+  needsReconnect?: boolean;
   scope: string | null;
   hasRefreshToken: boolean;
   expiresAt: string | null;
@@ -300,9 +301,12 @@ export async function getGoogleConnectorsStatus(
   const byProvider = new Map(rows.map((r) => [r.providerId, r]));
   const mapRow = (mode: GoogleHealthMode): GoogleConnectorConnectionStatus => {
     const r = byProvider.get(mode);
+    const expiresMs = r?.accessTokenExpiresAt?.getTime() ?? 0;
+    const expiredWithoutRefresh = Boolean(r && expiresMs > 0 && expiresMs <= Date.now() && !r.refreshToken);
     return {
       mode,
-      connected: Boolean(r),
+      connected: Boolean(r) && !expiredWithoutRefresh,
+      needsReconnect: expiredWithoutRefresh,
       scope: r?.scope ?? null,
       hasRefreshToken: Boolean(r?.refreshToken),
       expiresAt: r?.accessTokenExpiresAt?.toISOString() ?? null,

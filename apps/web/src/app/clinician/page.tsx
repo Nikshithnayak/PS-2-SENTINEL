@@ -6,6 +6,10 @@ import { useQuery } from '@tanstack/react-query';
 import { BellRing, Mic, Printer, ShieldAlert, Stethoscope, Users } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
 import { OpdScribeWorkspace } from '@/components/clinician/opd-scribe-workspace';
+import {
+  DetectionTimelineCard,
+  type PersistedDetectionTimeline,
+} from '@/components/health/detection-timeline-card';
 import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { StatusBadge, SyntheticBadge } from '@/components/health/status-badge';
@@ -30,6 +34,7 @@ interface PatientOverview {
   patientName: string;
   conditionModules: string[];
   isSynthetic: boolean;
+  detectionTimeline?: PersistedDetectionTimeline | null;
   latestAssessment: {
     deteriorationIndex: number;
     level: string;
@@ -565,6 +570,11 @@ export default function ClinicianDashboardPage() {
                 </div>
               </div>
             </section>
+
+            <DetectionTimelineCard
+              timeline={overviewQuery.data?.detectionTimeline}
+              isSynthetic={overviewQuery.data?.isSynthetic}
+            />
             </>
             )}
           </>

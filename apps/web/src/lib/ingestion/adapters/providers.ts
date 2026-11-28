@@ -233,87 +233,112 @@ export class GoogleFitAdapter implements ProviderAdapter {
     ];
 
     const out: VitalSampleInput[] = [];
+    const seenMetrics = new Set<MetricType>();
+    const hourlyStepsMap = new Map<string, number>();
+    const sleepSegmentDays = new Set<string>();
+    const perMetricErrors: string[] = [];
     let apiErrorMessage: string | null = null;
     let succeededCount = 0;
 
-    const results = await Promise.all(
-      specs.map(async (spec) => {
-        const res = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${params.accessToken}`,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            aggregateBy: [{ dataTypeName: spec.dataTypeName }],
-            bucketByTime: { durationMillis: spec.bucketMillis },
-            startTimeMillis: startMs,
-            endTimeMillis: endMs,
-          }),
-          signal: AbortSignal.timeout(8000),
-        });
+    async function queryAggregate(
+      aggregateBy: { dataTypeName: string } | { dataSourceId: string },
+      bucketMillis: number,
+    ): Promise<{
+      buckets: Array<{
+        startTimeMillis?: string;
+        endTimeMillis?: string;
+        dataset?: Array<{
+          dataSourceId?: string;
+          point?: Array<{
+            startTimeNanos?: string;
+            endTimeNanos?: string;
+            originDataSourceId?: string;
+            value?: Array<{ fpVal?: number; intVal?: number }>;
+          }>;
+        }>;
+      }> | null;
+      errorStatus: number;
+      errorMessage: string | null;
+    }> {
+      const res = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${params.accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          aggregateBy: [aggregateBy],
+          bucketByTime: { durationMillis: bucketMillis },
+          startTimeMillis: startMs,
+          endTimeMillis: endMs,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
 
-        if (!res.ok) {
-          const errBody = (await res.json().catch(() => ({}))) as {
-            error?: { message?: string; status?: string };
-          };
-          const msg = errBody.error?.message || `Google Fit HTTP ${res.status}`;
-          return { spec, buckets: null, errorStatus: res.status, errorMessage: msg };
-        }
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as {
+          error?: { message?: string; status?: string };
+        };
+        const msg = errBody.error?.message || `Google Fit HTTP ${res.status}`;
+        return { buckets: null, errorStatus: res.status, errorMessage: msg };
+      }
 
-        const payload = (await res.json()) as {
-          bucket?: Array<{
-            startTimeMillis?: string;
-            endTimeMillis?: string;
-            dataset?: Array<{
-              dataSourceId?: string;
-              point?: Array<{
-                startTimeNanos?: string;
-                endTimeNanos?: string;
-                originDataSourceId?: string;
-                value?: Array<{ fpVal?: number; intVal?: number }>;
-              }>;
+      const payload = (await res.json()) as {
+        bucket?: Array<{
+          startTimeMillis?: string;
+          endTimeMillis?: string;
+          dataset?: Array<{
+            dataSourceId?: string;
+            point?: Array<{
+              startTimeNanos?: string;
+              endTimeNanos?: string;
+              originDataSourceId?: string;
+              value?: Array<{ fpVal?: number; intVal?: number }>;
             }>;
           }>;
-        };
-        return { spec, buckets: payload.bucket ?? [], errorStatus: 200, errorMessage: null };
-      }),
-    );
+        }>;
+      };
+      return { buckets: payload.bucket ?? [], errorStatus: 200, errorMessage: null };
+    }
 
-    for (const r of results) {
-      if (!r.buckets) {
-        if ((r.errorStatus === 401 || r.errorStatus === 403 || r.errorStatus === 410) && r.errorMessage) {
-          apiErrorMessage = r.errorMessage;
-        }
-        continue;
-      }
-      succeededCount++;
-
-      for (const bucket of r.buckets) {
+    const extractSpecBuckets = (
+      spec: (typeof specs)[number],
+      buckets: NonNullable<Awaited<ReturnType<typeof queryAggregate>>['buckets']>,
+    ) => {
+      for (const bucket of buckets) {
         const bucketIso =
           bucket.startTimeMillis && Number.isFinite(Number(bucket.startTimeMillis))
             ? new Date(Number(bucket.startTimeMillis)).toISOString()
             : params.endIso;
+        const hourKey = bucketIso.slice(0, 13);
 
-        if (r.spec.metricType === 'sleep_duration_min') {
+        if (rSpecIsSleep(spec.metricType)) {
           let asleepMs = 0;
+          let totalBedMs = 0;
           let latestEndIso = bucketIso;
           for (const ds of bucket.dataset ?? []) {
             for (const pt of ds.point ?? []) {
               const stageCode = fitPointValue(pt);
-              // Google Fit sleep stage codes: 2 = awake, 3 = out-of-bed
-              if (stageCode === 2 || stageCode === 3) continue;
               const sIso = fitNanosToIso(pt.startTimeNanos);
               const eIso = fitNanosToIso(pt.endTimeNanos);
               if (sIso && eIso) {
                 const dur = Date.parse(eIso) - Date.parse(sIso);
-                if (dur > 0) asleepMs += dur;
-                latestEndIso = eIso;
+                if (dur > 0) {
+                  totalBedMs += dur;
+                  // Google Fit REST API `com.google.sleep.segment` sleep_segment_type codes:
+                  // 0 = unused/unknown, 1 = awake, 2 = sleep, 3 = out-of-bed, 4 = light, 5 = deep, 6 = REM
+                  if (stageCode !== 1 && stageCode !== 3 && stageCode !== 0) {
+                    asleepMs += dur;
+                  }
+                  latestEndIso = eIso;
+                }
               }
             }
           }
           const minutes = Math.round(asleepMs / 60_000);
           if (minutes > 0) {
+            seenMetrics.add('sleep_duration_min');
+            sleepSegmentDays.add(latestEndIso.slice(0, 10));
             out.push({
               metricType: 'sleep_duration_min',
               value: Math.min(1440, minutes),
@@ -324,33 +349,207 @@ export class GoogleFitAdapter implements ProviderAdapter {
               deviceModel: 'Google Fit Cloud',
               isSynthetic: false,
             });
+            if (totalBedMs > 0) {
+              const eff = Math.max(0, Math.min(100, Math.round((asleepMs / totalBedMs) * 100)));
+              seenMetrics.add('sleep_efficiency');
+              out.push({
+                metricType: 'sleep_efficiency',
+                value: eff,
+                unit: '%',
+                recordedAt: latestEndIso,
+                context: 'sleep',
+                source: 'google_fit',
+                deviceModel: 'Google Fit Cloud',
+                isSynthetic: false,
+              });
+            }
           }
           continue;
         }
 
+        let bucketStepsSum = 0;
         for (const ds of bucket.dataset ?? []) {
           for (const pt of ds.point ?? []) {
             const val = fitPointValue(pt);
             if (val === null) continue;
             const recordedAt =
               fitNanosToIso(pt.startTimeNanos) ?? fitNanosToIso(pt.endTimeNanos) ?? bucketIso;
+            if (spec.metricType === 'steps') {
+              bucketStepsSum += val;
+            }
+            seenMetrics.add(spec.metricType);
             out.push({
-              metricType: r.spec.metricType,
+              metricType: spec.metricType,
               value: Number(val.toFixed(3)),
-              unit: r.spec.unit,
+              unit: spec.unit,
               recordedAt,
-              context: r.spec.context,
+              context: spec.context,
               source: 'google_fit',
               deviceModel: pt.originDataSourceId || ds.dataSourceId || 'Google Fit Cloud',
               isSynthetic: false,
             });
           }
         }
+        if (spec.metricType === 'steps' && bucketStepsSum > 0) {
+          hourlyStepsMap.set(hourKey, (hourlyStepsMap.get(hourKey) ?? 0) + bucketStepsSum);
+        }
+      }
+    };
+
+    function rSpecIsSleep(m: MetricType): boolean {
+      return m === 'sleep_duration_min';
+    }
+
+    const [aggResults, sleepSessionsRes] = await Promise.all([
+      Promise.all(
+        specs.map(async (spec) => {
+          const agg = await queryAggregate({ dataTypeName: spec.dataTypeName }, spec.bucketMillis);
+          return { spec, ...agg };
+        }),
+      ),
+      fetch(
+        `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${encodeURIComponent(new Date(startMs).toISOString())}&endTime=${encodeURIComponent(new Date(endMs).toISOString())}&activityType=72`,
+        {
+          headers: { Authorization: `Bearer ${params.accessToken}` },
+          signal: AbortSignal.timeout(8000),
+        },
+      )
+        .then(async (r) => {
+          if (!r.ok) return null;
+          return (await r.json()) as {
+            session?: Array<{
+              id?: string;
+              name?: string;
+              startTimeMillis?: string;
+              endTimeMillis?: string;
+              activityType?: number;
+              application?: { packageName?: string };
+            }>;
+          };
+        })
+        .catch(() => null),
+    ]);
+
+    for (const r of aggResults) {
+      if (!r.buckets) {
+        if (r.errorMessage) perMetricErrors.push(`${r.spec.dataTypeName}: ${r.errorMessage}`);
+        if ((r.errorStatus === 401 || r.errorStatus === 403 || r.errorStatus === 410) && r.errorMessage) {
+          apiErrorMessage = r.errorMessage;
+        }
+        continue;
+      }
+      succeededCount++;
+      extractSpecBuckets(r.spec, r.buckets);
+    }
+
+    // Fallback: if core metrics (HR / Steps / SpO2 / Sleep) had no default merged datasource,
+    // query explicit registered dataSources (via dataSourceId aggregate, then direct dataset range)
+    // BEFORE sleep session gap-fill so granular sleep stages take priority over coarse sessions.
+    if (!seenMetrics.has('heart_rate') || !seenMetrics.has('steps') || !seenMetrics.has('spo2')) {
+      const dsRes = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataSources', {
+        headers: { Authorization: `Bearer ${params.accessToken}` },
+        signal: AbortSignal.timeout(8000),
+      })
+        .then(async (r) =>
+          r.ok
+            ? ((await r.json()) as {
+                dataSource?: Array<{
+                  dataStreamId?: string;
+                  dataType?: { name?: string };
+                }>;
+              })
+            : null,
+        )
+        .catch(() => null);
+
+      const fallbackStreams = (dsRes?.dataSource ?? [])
+        .filter((ds) => ds.dataStreamId && ds.dataType?.name)
+        .filter((ds) => {
+          const spec = specs.find((s) => s.dataTypeName === ds.dataType?.name);
+          return Boolean(spec && !seenMetrics.has(spec.metricType));
+        })
+        .slice(0, 8);
+
+      if (fallbackStreams.length > 0) {
+        await Promise.all(
+          fallbackStreams.map(async (ds) => {
+            const spec = specs.find((s) => s.dataTypeName === ds.dataType?.name);
+            if (!spec || !ds.dataStreamId) return;
+            const agg = await queryAggregate({ dataSourceId: ds.dataStreamId }, spec.bucketMillis);
+            const hasPoints =
+              agg.buckets?.some((b) => (b.dataset ?? []).some((d) => (d.point ?? []).length > 0)) ??
+              false;
+            if (agg.buckets && hasPoints) {
+              succeededCount++;
+              extractSpecBuckets(spec, agg.buckets);
+              return;
+            }
+            const dsDatasetUrl = `https://www.googleapis.com/fitness/v1/users/me/dataSources/${encodeURIComponent(ds.dataStreamId)}/datasets/${Math.trunc(startMs)}000000-${Math.trunc(endMs)}000000`;
+            const rawRes = await fetch(dsDatasetUrl, {
+              headers: { Authorization: `Bearer ${params.accessToken}` },
+              signal: AbortSignal.timeout(8000),
+            })
+              .then(async (r) =>
+                r.ok
+                  ? ((await r.json()) as {
+                      point?: Array<{
+                        startTimeNanos?: string;
+                        endTimeNanos?: string;
+                        originDataSourceId?: string;
+                        value?: Array<{ fpVal?: number; intVal?: number }>;
+                      }>;
+                    })
+                  : null,
+              )
+              .catch(() => null);
+            if (rawRes?.point && rawRes.point.length > 0) {
+              succeededCount++;
+              extractSpecBuckets(spec, [
+                {
+                  startTimeMillis: String(Math.trunc(startMs)),
+                  endTimeMillis: String(Math.trunc(endMs)),
+                  dataset: [{ dataSourceId: ds.dataStreamId, point: rawRes.point }],
+                },
+              ]);
+            }
+          }),
+        );
       }
     }
 
+    // Extract sleep duration from Google Fit Sleep Sessions (activityType=72) used by Health Connect, Fitbit, Noise & Samsung sync
+    // whenever granular sleep.segment data did not already cover that night.
+    for (const s of sleepSessionsRes?.session ?? []) {
+      const sMs = Number(s.startTimeMillis);
+      const eMs = Number(s.endTimeMillis);
+      if (!Number.isFinite(sMs) || !Number.isFinite(eMs) || eMs <= sMs) continue;
+      const mins = Math.round((eMs - sMs) / 60_000);
+      if (mins < 20 || mins > 1440) continue;
+      const endIso = new Date(eMs).toISOString();
+      if (sleepSegmentDays.has(endIso.slice(0, 10))) continue;
+      sleepSegmentDays.add(endIso.slice(0, 10));
+      seenMetrics.add('sleep_duration_min');
+      out.push({
+        metricType: 'sleep_duration_min',
+        value: mins,
+        unit: 'min',
+        recordedAt: endIso,
+        context: 'sleep',
+        source: 'google_fit',
+        deviceModel: s.application?.packageName || 'Google Fit Sleep Session',
+        isSynthetic: false,
+      });
+    }
+
     if (succeededCount === 0 && apiErrorMessage) {
-      throw new Error(apiErrorMessage);
+      throw new Error(
+        `${apiErrorMessage} (Enable Fitness API + grant permissions in Google Cloud Console, or reconnect Google Fit.)`,
+      );
+    }
+
+    if (succeededCount === 0 && out.length === 0 && perMetricErrors.length > 0) {
+      // e.g. 400 No default datasource found across all metrics
+      return [];
     }
 
     return out;

@@ -36,6 +36,7 @@ export interface GoogleConnectorsSummary {
     google_fit: {
       mode: 'google_fit';
       connected: boolean;
+      needsReconnect?: boolean;
       scope: string | null;
       hasRefreshToken: boolean;
       expiresAt: string | null;
@@ -44,6 +45,7 @@ export interface GoogleConnectorsSummary {
     google_health_api: {
       mode: 'google_health_api';
       connected: boolean;
+      needsReconnect?: boolean;
       scope: string | null;
       hasRefreshToken: boolean;
       expiresAt: string | null;
@@ -375,7 +377,7 @@ export function WatchSyncHub({
       const res = await fetch('/api/v1/sync/provider', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, patientId, hoursBack: 48, evaluate: true }),
+        body: JSON.stringify({ provider, patientId, hoursBack: 336, evaluate: true }),
       });
       const body = (await res.json()) as {
         error?: string;
@@ -400,6 +402,7 @@ export function WatchSyncHub({
   const webhookUrl = `${origin}/api/v1/ingest/watch`;
   const googleCallbackUrl = googleConnectors?.callbackUrl ?? `${origin}/api/v1/connectors/google/callback`;
   const gfitConnected = googleConnectors?.connections.google_fit.connected ?? false;
+  const gfitNeedsReconnect = googleConnectors?.connections.google_fit.needsReconnect ?? false;
   const ghConnected = googleConnectors?.connections.google_health_api.connected ?? false;
   const gOAuthReady = googleConnectors?.oauthClientConfigured ?? true;
 
@@ -492,12 +495,18 @@ export function WatchSyncHub({
               </div>
               <span
                 className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                  gfitConnected || ghConnected
-                    ? 'border-[var(--status-stable)] bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
-                    : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
+                  gfitNeedsReconnect
+                    ? 'border-[var(--status-watch)] bg-[var(--status-watch-bg)] text-[var(--status-watch)]'
+                    : gfitConnected || ghConnected
+                      ? 'border-[var(--status-stable)] bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
+                      : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
                 }`}
               >
-                {gfitConnected || ghConnected ? 'Connected' : 'Ready to Connect'}
+                {gfitNeedsReconnect
+                  ? 'Reconnect Required'
+                  : gfitConnected || ghConnected
+                    ? 'Connected'
+                    : 'Ready to Connect'}
               </span>
             </div>
 
@@ -506,8 +515,14 @@ export function WatchSyncHub({
                 Pulls heart rate, steps, SpO₂, body temperature, blood pressure, glucose, and sleep
                 sessions directly from Google without downloading any files.
               </p>
+              {gfitNeedsReconnect && (
+                <p className="rounded-lg border border-[var(--status-watch)] bg-[var(--status-watch-bg)] px-3 py-2 text-[var(--status-watch)]">
+                  Your previous Google Fit authorization expired without a refresh token. Click
+                  <strong> Reconnect Google Fit</strong> below to grant offline sync access.
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                {gfitConnected ? (
+                {gfitConnected && !gfitNeedsReconnect ? (
                   <>
                     <button
                       type="button"
@@ -523,6 +538,13 @@ export function WatchSyncHub({
                         {syncingProvider === 'google_fit' ? 'Syncing Google Fit...' : 'Sync Google Fit Now'}
                       </span>
                     </button>
+                    <a
+                      href={patientId ? `/api/v1/connectors/google/connect?mode=fit&patientId=${encodeURIComponent(patientId)}` : '/api/v1/connectors/google/connect?mode=fit'}
+                      aria-disabled={!gOAuthReady}
+                      className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] ${!gOAuthReady ? 'pointer-events-none opacity-50' : ''}`}
+                    >
+                      <span>Re-authorize</span>
+                    </a>
                     <button
                       type="button"
                       onClick={() => void disconnectGoogle('google_fit')}
@@ -534,14 +556,27 @@ export function WatchSyncHub({
                     </button>
                   </>
                 ) : (
-                  <a
-                    href={patientId ? `/api/v1/connectors/google/connect?mode=fit&patientId=${encodeURIComponent(patientId)}` : '/api/v1/connectors/google/connect?mode=fit'}
-                    aria-disabled={!gOAuthReady}
-                    className={`inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--brand-primary)] px-5 py-2 text-xs font-semibold text-[var(--brand-primary-fg)] ${!gOAuthReady ? 'pointer-events-none opacity-50' : ''}`}
-                  >
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                    <span>Connect Google Fit</span>
-                  </a>
+                  <>
+                    <a
+                      href={patientId ? `/api/v1/connectors/google/connect?mode=fit&patientId=${encodeURIComponent(patientId)}` : '/api/v1/connectors/google/connect?mode=fit'}
+                      aria-disabled={!gOAuthReady}
+                      className={`inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--brand-primary)] px-5 py-2 text-xs font-semibold text-[var(--brand-primary-fg)] ${!gOAuthReady ? 'pointer-events-none opacity-50' : ''}`}
+                    >
+                      <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                      <span>{gfitNeedsReconnect ? 'Reconnect Google Fit' : 'Connect Google Fit'}</span>
+                    </a>
+                    {gfitNeedsReconnect && (
+                      <button
+                        type="button"
+                        onClick={() => void disconnectGoogle('google_fit')}
+                        disabled={disconnectingMode !== null}
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] cursor-pointer"
+                      >
+                        <Unplug className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>Disconnect</span>
+                      </button>
+                    )}
+                  </>
                 )}
 
                 {ghConnected ? (

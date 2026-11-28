@@ -13,6 +13,10 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { VitalsChart, type VitalsChartPoint } from '@/components/charts/vitals-chart';
+import {
+  DetectionTimelineCard,
+  type PersistedDetectionTimeline,
+} from '@/components/health/detection-timeline-card';
 import { RoleWorkspaceGuard } from '@/components/health/role-gate';
 import { SignedOutGate } from '@/components/health/signed-out-gate';
 import { StatusBadge, SyntheticBadge } from '@/components/health/status-badge';
@@ -37,6 +41,7 @@ interface CaregiverDashboardData {
   emergencyNumber: string;
   ambulanceNumber: string;
   isSynthetic: boolean;
+  detectionTimeline?: PersistedDetectionTimeline | null;
   silence: {
     hoursSilent: number | null;
     isSilent: boolean;
@@ -564,6 +569,11 @@ export default function CaregiverConsolePage() {
                     </div>
                   </section>
                 </div>
+
+                <DetectionTimelineCard
+                  timeline={detailQuery.data.detectionTimeline}
+                  isSynthetic={detailQuery.data.isSynthetic}
+                />
               </>
             )}
           </>

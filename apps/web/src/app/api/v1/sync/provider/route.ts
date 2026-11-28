@@ -16,7 +16,7 @@ const SyncProviderSchema = z.object({
   patientId: z.string().uuid().optional(),
   externalUserId: z.string().min(1).max(160).optional(),
   accessToken: z.string().min(1).max(2048).optional(),
-  hoursBack: z.number().int().min(1).max(720).default(24),
+  hoursBack: z.number().int().min(1).max(720).default(336),
   evaluate: z.boolean().default(true),
 });
 
@@ -120,7 +120,10 @@ export async function POST(request: NextRequest) {
       recordsReceived: 0,
       recordsAccepted: 0,
       recordsSkipped: 0,
-      message: 'Connected to upstream provider, but no samples were returned for the selected window.',
+      message:
+        parsed.data.provider === 'google_fit'
+          ? 'Connected to Google Fit, but Google returned 0 readings in the last 14 days (HR, Steps, Sleep, SpO2). Check Google Fit sync on Android or use Android Health Connect Direct Bridge.'
+          : 'Connected to upstream provider, but no samples were returned for the selected window.',
     });
   }
 

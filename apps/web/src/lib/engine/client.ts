@@ -10,6 +10,7 @@ import {
   riskAssessments,
   vitalSamples,
 } from '@/db/schema';
+import { evaluateLocalDeterministicEngine } from '@/lib/engine/ts-fallback';
 
 export interface SignalContribution {
   metricType: string;
@@ -127,136 +128,46 @@ function buildLocalizedSummaries(
 }
 
 /**
- * Emergency deterministic TS mirror used only if the Python FastAPI service is offline.
+ * Deterministic TypeScript mirror of the Python FastAPI engine (used automatically
+ * on Vercel serverless deployments where ENGINE_URL is unset or offline).
  */
 function fallbackEvaluateLocal(params: {
   patientId: string;
   samples: Array<{
     metricType: string;
     value: number;
+    unit: string;
     recordedAt: string;
     context: string;
     dataConfidence: number;
+    qualityFlags?: string[];
     isSynthetic: boolean;
   }>;
   conditions: string[];
+  age?: number;
+  exclusions?: Array<{ startsAt: string; endsAt: string; reason: string }>;
+  environment?: {
+    apparentTempC?: number | null;
+    heatRiskLevel?: string | null;
+    pm25?: number | null;
+  } | null;
 }): EngineEvaluationResult {
-  const { patientId, samples, conditions } = params;
-  const nowIso = new Date().toISOString();
-  const isSynthetic = samples.some((s) => s.isSynthetic);
-  const byMetric = new Map<string, number[]>();
-  const latest = new Map<string, number>();
-
-  for (const s of samples) {
-    const arr = byMetric.get(s.metricType) ?? [];
-    arr.push(s.value);
-    byMetric.set(s.metricType, arr);
-    latest.set(s.metricType, s.value);
-  }
-
-  const rhrList = byMetric.get('resting_heart_rate') ?? [65];
-  const rhrSorted = [...rhrList].sort((a, b) => a - b);
-  const rhrMedian = rhrSorted[Math.floor(rhrSorted.length / 2)] ?? 65;
-  const latestRhr = latest.get('resting_heart_rate') ?? rhrMedian;
-  const rhrZ = (latestRhr - rhrMedian) / 4.0;
-
-  const spo2List = byMetric.get('spo2') ?? [97];
-  const latestSpo2 = latest.get('spo2') ?? 97;
-  const spo2Drop = Math.max(0, 96 - latestSpo2);
-
-  const l1 = latestSpo2 < 88 || latestRhr > 130 ? 85 : latestRhr > 110 ? 55 : 0;
-  const l2 = Math.min(100, Math.max(0, rhrZ * 18 + spo2Drop * 8));
-  const index = Math.round(Math.min(100, Math.max(l1, 0.4 * l1 + 0.6 * l2)) * 10) / 10;
-  const level: AlertLevel =
-    index >= 80 ? 'urgent' : index >= 55 ? 'warning' : index >= 30 ? 'watch' : 'stable';
-
-  const days = Math.min(
-    18,
-    new Set(samples.map((s) => s.recordedAt.slice(0, 10))).size,
+  const res = evaluateLocalDeterministicEngine({
+    patientId: params.patientId,
+    samples: params.samples,
+    conditions: params.conditions,
+    age: params.age,
+    exclusions: params.exclusions,
+    environment: params.environment,
+  });
+  const localized = buildLocalizedSummaries(
+    res.level,
+    res.contributions.map((c) => c.label),
+    res.baseline.validDays,
+    res.summaryText,
   );
-  const stage = days >= 14 ? 'calibrated' : days >= 3 ? 'learning' : 'warming_prior';
-  const summaryEn =
-    samples.length === 0
-      ? 'No wearable samples synced yet — pair a watch or sync Google Fit / Health Connect.'
-      : level === 'stable'
-        ? `Readings look consistent with your personal normal (${stage}).`
-        : 'Notable changes from your personal normal detected (TS fallback mode).';
-  const localized = buildLocalizedSummaries(level, ['Resting Heart Rate', 'SpO2'], days, summaryEn);
-
   return {
-    patientId,
-    assessedAt: nowIso,
-    modelVersion: 'sentinel-ts-fallback-v1',
-    engineSource: 'ts-fallback',
-    isSynthetic,
-    deteriorationIndex: index,
-    level,
-    baseline: {
-      patientId,
-      totalSpanDays: days,
-      validDays: days,
-      stage,
-      statusLabel: `Fallback baseline (${days} valid days)`,
-      conditions,
-      spo2Scale: conditions.includes('copd') ? 2 : 1,
-      metrics: [
-        {
-          metricType: 'resting_heart_rate',
-          context: 'calm_all',
-          sampleCount: rhrList.length,
-          validDays: days,
-          stage,
-          median: rhrMedian,
-          mad: 3.0,
-          sigma: 4.5,
-          priorMean: 66,
-          priorSd: 7.5,
-          normalLow: rhrMedian - 7,
-          normalHigh: rhrMedian + 7,
-          hourlyOffsets: { night: -1, morning: 0, afternoon: 1, evening: 0 },
-          baselineVersion: 'sentinel-ts-fallback-v1',
-        },
-      ],
-    },
-    l1Score: l1,
-    l2Score: l2,
-    l3Score: 0,
-    deviceSilent: samples.length === 0,
-    hoursSilent: 0,
-    contributions: [
-      {
-        metricType: 'resting_heart_rate',
-        label: 'Resting Heart Rate',
-        unit: 'bpm',
-        observed: latestRhr,
-        personalMedian: rhrMedian,
-        normalLow: rhrMedian - 7,
-        normalHigh: rhrMedian + 7,
-        zScore: Math.round(rhrZ * 100) / 100,
-        ewmaZ: Math.round(rhrZ * 100) / 100,
-        cusum: 0,
-        direction: rhrZ > 0.8 ? 'higher' : 'normal',
-        rawContribution: Math.round(l2),
-        sharePct: 100,
-        message: `Resting Heart Rate (${latestRhr.toFixed(1)} bpm) vs personal normal.`,
-      },
-    ],
-    trend72h: [{ timestamp: nowIso, score: index, confidence: 1, excluded: false }],
-    changePoints: [],
-    partialNews2: {
-      partialScore: 0,
-      maxObservablePoints: 9,
-      scoredParameterCount: 3,
-      totalNews2Parameters: 7,
-      spo2Scale: conditions.includes('copd') ? 2 : 1,
-      disclaimer: 'Partial fallback NEWS2.',
-      parameters: [],
-    },
-    decisionLog: {
-      suppressedConfounders: [],
-      l1Triggers: [],
-      l3Details: { mode: 'ts-fallback' },
-    },
+    ...res,
     summaryText: localized.en,
     explanationKn: localized.kn,
     explanationHi: localized.hi,
@@ -384,6 +295,15 @@ export async function runAndPersistEvaluation(params: {
       patientId,
       samples: payloadSamples,
       conditions: dbInput.profile.conditionModules,
+      age: approxAge,
+      exclusions: payloadExclusions,
+      environment: dbInput.environment
+        ? {
+            apparentTempC: dbInput.environment.apparentTempC,
+            heatRiskLevel: dbInput.environment.heatRiskLevel,
+            pm25: dbInput.environment.pm25,
+          }
+        : null,
     });
   }
 
@@ -397,7 +317,7 @@ export async function runAndPersistEvaluation(params: {
       ? nowDate
       : parsedAssessed;
   const assessmentId = await withSystemDb(async (tx) => {
-    for (const mb of evaluated.baseline.metrics.slice(0, 16)) {
+    for (const mb of evaluated.baseline.metrics.slice(0, 20)) {
       const existing = await tx
         .select({ id: baselineStates.id })
         .from(baselineStates)
