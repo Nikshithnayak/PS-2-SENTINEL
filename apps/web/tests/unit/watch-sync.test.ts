@@ -10,7 +10,20 @@ import {
   computeRmssdFromRrIntervals,
   normalizeWatchPayload,
   parseBleHeartRateMeasurement,
+  parseBlePulseOximeterMeasurement,
 } from '@/lib/ingestion/watch-normalizer';
+import {
+  BLE_CHARACTERISTICS,
+  BLE_STANDARD_SERVICES,
+  buildRequestDeviceOptions,
+  checkBleAvailability,
+  connectGattWithRetry,
+  discoverWatchServices,
+  formatBleConnectionError,
+  type BluetoothDeviceLike,
+  type GattCharacteristicLike,
+  type GattServerLike,
+} from '@/lib/ingestion/ble-watch';
 import type { SessionContext } from '@/lib/session';
 
 let mockSession: SessionContext | null = null;
@@ -452,5 +465,154 @@ describe('Universal Smartwatch Sync (BLE GATT, Webhook Normalizer, Cloud Bridges
       'https://ps-2-sentinel.vercel.app/api/auth/callback/google',
     );
     expect(parsedUrl.searchParams.get('state') ?? '').toMatch(/^gfit_/);
+  });
+
+  it('builds Web Bluetooth scan options with acceptAllDevices default + HR/SpO2 optionalServices and parses 0x1822 PLX packets', async () => {
+    const allOpts = buildRequestDeviceOptions('all_devices');
+    expect('acceptAllDevices' in allOpts && allOpts.acceptAllDevices).toBe(true);
+    expect(allOpts.optionalServices).toContain(BLE_STANDARD_SERVICES.HEART_RATE);
+    expect(allOpts.optionalServices).toContain(BLE_STANDARD_SERVICES.PULSE_OXIMETER);
+    expect(allOpts.optionalServices).toContain(BLE_STANDARD_SERVICES.DEVICE_INFORMATION);
+
+    const hrOpts = buildRequestDeviceOptions('health_services');
+    expect('filters' in hrOpts && hrOpts.filters).toEqual([
+      { services: ['heart_rate'] },
+      { services: [0x1822] },
+    ]);
+
+    // BLE 0x1822 Pulse Oximeter packet: flags=0x00, SpO2=97 (mantissa 97, exp 0 -> 0x0061), PR=74 (0x004A)
+    const plxBuf = new ArrayBuffer(5);
+    const plxView = new DataView(plxBuf);
+    plxView.setUint8(0, 0x00);
+    plxView.setUint16(1, 97, true);
+    plxView.setUint16(3, 74, true);
+    const parsedPlx = parseBlePulseOximeterMeasurement(plxView);
+    expect(parsedPlx.spo2).toBe(97);
+    expect(parsedPlx.pulseRate).toBe(74);
+
+    // Unavailable SpO2 sentinel (0x07FF NaN) safely maps to null
+    plxView.setUint16(1, 0x07ff, true);
+    const nanPlx = parseBlePulseOximeterMeasurement(plxView);
+    expect(nanPlx.spo2).toBeNull();
+    expect(nanPlx.pulseRate).toBe(74);
+
+    const insecure = await checkBleAvailability({ bluetooth: undefined }, false);
+    expect(insecure.supported).toBe(false);
+    expect(insecure.badgeLabel).toBe('HTTPS Required');
+
+    const radioOff = await checkBleAvailability(
+      {
+        bluetooth: {
+          requestDevice: async () => ({ name: 'Watch', addEventListener: () => {} }),
+          getAvailability: async () => false,
+        },
+      },
+      true,
+    );
+    expect(radioOff.supported).toBe(true);
+    expect(radioOff.adapterAvailable).toBe(false);
+    expect(radioOff.badgeLabel).toBe('Bluetooth Radio Off');
+  });
+
+  it('retries transient BLE GATT disconnects, reads 0x180A watch identity, and diagnoses proprietary watches without 0x180D', async () => {
+    let attempts = 0;
+    const fakeHrChar: GattCharacteristicLike = {
+      value: null,
+      startNotifications: async () => fakeHrChar,
+      readValue: async () => new DataView(new ArrayBuffer(0)),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+
+    const encoder = new TextEncoder();
+    const toDv = (txt: string) => {
+      const bytes = encoder.encode(txt);
+      return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    };
+
+    const gattServer: GattServerLike = {
+      connected: true,
+      connect: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          const err = new Error('GATT Server is disconnected');
+          err.name = 'NetworkError';
+          throw err;
+        }
+        return gattServer;
+      },
+      disconnect: () => {},
+      getPrimaryService: async (uuid) => {
+        if (uuid === BLE_STANDARD_SERVICES.DEVICE_INFORMATION) {
+          return {
+            getCharacteristic: async (c) => ({
+              value: null,
+              startNotifications: async () => fakeHrChar,
+              readValue: async () =>
+                c === BLE_CHARACTERISTICS.MANUFACTURER_NAME
+                  ? toDv('Noise')
+                  : toDv('ColorFit Pro 5'),
+              addEventListener: () => {},
+              removeEventListener: () => {},
+            }),
+          };
+        }
+        if (uuid === BLE_STANDARD_SERVICES.BATTERY) {
+          return {
+            getCharacteristic: async () => ({
+              value: null,
+              startNotifications: async () => fakeHrChar,
+              readValue: async () => new DataView(new Uint8Array([84]).buffer),
+              addEventListener: () => {},
+              removeEventListener: () => {},
+            }),
+          };
+        }
+        if (uuid === BLE_STANDARD_SERVICES.HEART_RATE) {
+          return { getCharacteristic: async () => fakeHrChar };
+        }
+        throw new Error('Service missing');
+      },
+    };
+
+    const fakeDevice: BluetoothDeviceLike = {
+      name: '',
+      gatt: gattServer,
+      addEventListener: () => {},
+    };
+
+    const server = await connectGattWithRetry(fakeDevice, 2, 1);
+    expect(attempts).toBe(2);
+
+    const discovered = await discoverWatchServices(server, fakeDevice.name);
+    expect(discovered.watchLabel).toBe('Noise ColorFit Pro 5');
+    expect(discovered.batteryPct).toBe(84);
+    expect(discovered.hrChar).not.toBeNull();
+
+    // Proprietary Amazfit/OEM watch exposing only 0xFEE0 + Nordic UART (no 0x180D)
+    const proprietaryServer: GattServerLike = {
+      connected: true,
+      connect: async () => proprietaryServer,
+      disconnect: () => {},
+      getPrimaryService: async () => {
+        throw new Error('No 0x180D or 0x1822 service');
+      },
+      getPrimaryServices: async () => [
+        { uuid: '0000fee0-0000-1000-8000-00805f9b34fb', getCharacteristic: async () => fakeHrChar },
+      ],
+    };
+    const propDiag = await discoverWatchServices(proprietaryServer, 'Amazfit Bip 5');
+    expect(propDiag.hrChar).toBeNull();
+    expect(propDiag.plxChar).toBeNull();
+    expect(propDiag.vendorDiagnosis).toContain('Amazfit / Zepp / Mi Band');
+
+    const notFoundErr = new Error('User cancelled the requestDevice() chooser.');
+    notFoundErr.name = 'NotFoundError';
+    expect(formatBleConnectionError(notFoundErr, 'health_services')).toContain(
+      'All Nearby Watches',
+    );
+    expect(formatBleConnectionError(notFoundErr, 'all_devices')).toContain(
+      '1 active BLE link',
+    );
   });
 });

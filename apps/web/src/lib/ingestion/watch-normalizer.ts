@@ -81,6 +81,43 @@ export function parseBleHeartRateMeasurement(view: DataView): BleHeartRateReadin
   };
 }
 
+export interface BlePulseOximeterReading {
+  spo2: number | null;
+  pulseRate: number | null;
+}
+
+const IEEE_11073_SFLOAT_SPECIAL = new Set([0x07ff, 0x0800, 0x07fe, 0x0802, 0x0801]);
+
+/**
+ * Decodes an unsigned 16-bit IEEE-11073 SFLOAT (4-bit signed exponent + 12-bit signed mantissa).
+ * Returns null for NaN / NRes / Inf / Reserved sentinel values.
+ */
+export function decodeIeee11073Sfloat(raw16: number): number | null {
+  if (IEEE_11073_SFLOAT_SPECIAL.has(raw16)) return null;
+  let mantissa = raw16 & 0x0fff;
+  if ((mantissa & 0x0800) !== 0) mantissa -= 0x1000;
+  let exponent = (raw16 >> 12) & 0x0f;
+  if ((exponent & 0x08) !== 0) exponent -= 16;
+  const val = mantissa * Math.pow(10, exponent);
+  return Number.isFinite(val) ? Number(val.toFixed(2)) : null;
+}
+
+/**
+ * Parses a Bluetooth SIG Pulse Oximeter Service (0x1822) PLX Spot-Check (0x2A5E)
+ * or PLX Continuous Measurement (0x2A5F) packet for SpO2 (%) and Pulse Rate (bpm).
+ */
+export function parseBlePulseOximeterMeasurement(view: DataView): BlePulseOximeterReading {
+  if (view.byteLength < 5) {
+    throw new Error('Malformed BLE 0x1822 PLX packet: expected at least 5 bytes');
+  }
+  const rawSpo2 = decodeIeee11073Sfloat(view.getUint16(1, true));
+  const rawPr = decodeIeee11073Sfloat(view.getUint16(3, true));
+  return {
+    spo2: rawSpo2 !== null && rawSpo2 >= 50 && rawSpo2 <= 100 ? rawSpo2 : null,
+    pulseRate: rawPr !== null && rawPr >= 20 && rawPr <= 250 ? Math.round(rawPr) : null,
+  };
+}
+
 const FLAT_FIELD_TO_METRIC: ReadonlyArray<{
   keys: readonly string[];
   metricType: MetricType;

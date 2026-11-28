@@ -20,7 +20,20 @@ import type { VitalSampleInput } from '@sentinel/shared';
 import {
   computeRmssdFromRrIntervals,
   parseBleHeartRateMeasurement,
+  parseBlePulseOximeterMeasurement,
 } from '@/lib/ingestion/watch-normalizer';
+import {
+  buildRequestDeviceOptions,
+  checkBleAvailability,
+  connectGattWithRetry,
+  discoverWatchServices,
+  formatBleConnectionError,
+  type BleEnvironmentStatus,
+  type BleScanMode,
+  type BluetoothDeviceLike,
+  type GattCharacteristicLike,
+  type NavigatorBluetoothLike,
+} from '@/lib/ingestion/ble-watch';
 
 export interface AdapterHealthSummary {
   configured: boolean;
@@ -61,38 +74,6 @@ interface WatchSyncHubProps {
   onSyncComplete: () => void;
 }
 
-interface GattCharacteristicLike {
-  value: DataView | null;
-  startNotifications(): Promise<GattCharacteristicLike>;
-  readValue(): Promise<DataView>;
-  addEventListener(type: string, listener: (ev: { target: GattCharacteristicLike }) => void): void;
-  removeEventListener(type: string, listener: (ev: { target: GattCharacteristicLike }) => void): void;
-}
-
-interface GattServiceLike {
-  getCharacteristic(uuid: string): Promise<GattCharacteristicLike>;
-}
-
-interface GattServerLike {
-  connected: boolean;
-  connect(): Promise<GattServerLike>;
-  disconnect(): void;
-  getPrimaryService(uuid: string): Promise<GattServiceLike>;
-}
-
-interface BluetoothDeviceLike {
-  name?: string;
-  gatt?: GattServerLike;
-  addEventListener(type: string, listener: () => void): void;
-}
-
-interface NavigatorBluetoothLike {
-  requestDevice(options: {
-    filters: Array<{ services: string[] }>;
-    optionalServices?: string[];
-  }): Promise<BluetoothDeviceLike>;
-}
-
 type CompanionPlatform = 'android' | 'apple' | 'curl';
 
 const subscribeNoop = () => () => {};
@@ -126,14 +107,23 @@ export function WatchSyncHub({
   const [disconnectingMode, setDisconnectingMode] = useState<string | null>(null);
 
   // BLE Live Watch state
+  const [bleScanMode, setBleScanMode] = useState<BleScanMode>('all_devices');
+  const [bleEnv, setBleEnv] = useState<BleEnvironmentStatus>({
+    supported: bleSupported,
+    adapterAvailable: bleSupported,
+    badgeLabel: bleSupported ? 'Browser Ready' : 'Unsupported Browser',
+    reason: null,
+  });
   const [bleStatus, setBleStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [bleMessage, setBleMessage] = useState<string | null>(null);
   const [watchName, setWatchName] = useState<string | null>(null);
   const [batteryPct, setBatteryPct] = useState<number | null>(null);
   const [liveBpm, setLiveBpm] = useState<number | null>(null);
   const [liveHrv, setLiveHrv] = useState<number | null>(null);
+  const [liveSpo2, setLiveSpo2] = useState<number | null>(null);
   const [contactDetected, setContactDetected] = useState<boolean | null>(null);
   const [bufferedCount, setBufferedCount] = useState(0);
+  const [autoSavedCount, setAutoSavedCount] = useState(0);
   const [syncingBle, setSyncingBle] = useState(false);
 
   // Cloud Adapter Sync state
@@ -143,20 +133,86 @@ export function WatchSyncHub({
 
   const deviceRef = useRef<BluetoothDeviceLike | null>(null);
   const hrCharRef = useRef<GattCharacteristicLike | null>(null);
-  const listenerRef = useRef<((ev: { target: GattCharacteristicLike }) => void) | null>(null);
+  const plxCharRef = useRef<GattCharacteristicLike | null>(null);
+  const hrListenerRef = useRef<((ev: { target: GattCharacteristicLike }) => void) | null>(null);
+  const plxListenerRef = useRef<((ev: { target: GattCharacteristicLike }) => void) | null>(null);
+  const disconnectListenerRef = useRef<(() => void) | null>(null);
   const samplesBufferRef = useRef<VitalSampleInput[]>([]);
   const rrWindowRef = useRef<number[]>([]);
+  const lastSampleMsRef = useRef<number>(0);
+  const flushingBleRef = useRef<boolean>(false);
+
+  function nextMonotonicIso(): string {
+    const now = Date.now();
+    const nextMs = now > lastSampleMsRef.current ? now : lastSampleMsRef.current + 1;
+    lastSampleMsRef.current = nextMs;
+    return new Date(nextMs).toISOString();
+  }
+
+  function cleanupBleHandles() {
+    if (hrCharRef.current && hrListenerRef.current) {
+      hrCharRef.current.removeEventListener('characteristicvaluechanged', hrListenerRef.current);
+      void hrCharRef.current.stopNotifications?.().catch(() => {});
+    }
+    if (plxCharRef.current && plxListenerRef.current) {
+      plxCharRef.current.removeEventListener('characteristicvaluechanged', plxListenerRef.current);
+      void plxCharRef.current.stopNotifications?.().catch(() => {});
+    }
+    if (deviceRef.current && disconnectListenerRef.current) {
+      deviceRef.current.removeEventListener?.(
+        'gattserverdisconnected',
+        disconnectListenerRef.current,
+      );
+    }
+    if (deviceRef.current?.gatt?.connected) {
+      deviceRef.current.gatt.disconnect();
+    }
+    hrCharRef.current = null;
+    plxCharRef.current = null;
+    hrListenerRef.current = null;
+    plxListenerRef.current = null;
+    disconnectListenerRef.current = null;
+    deviceRef.current = null;
+    rrWindowRef.current = [];
+  }
 
   useEffect(() => {
-    return () => {
-      if (hrCharRef.current && listenerRef.current) {
-        hrCharRef.current.removeEventListener('characteristicvaluechanged', listenerRef.current);
-      }
-      if (deviceRef.current?.gatt?.connected) {
-        deviceRef.current.gatt.disconnect();
-      }
+    let active = true;
+    const nav =
+      typeof navigator !== 'undefined'
+        ? (navigator as unknown as { bluetooth?: NavigatorBluetoothLike })
+        : undefined;
+    const secure = typeof window !== 'undefined' ? window.isSecureContext : true;
+
+    const refreshAvailability = () => {
+      void checkBleAvailability(nav, secure).then((env) => {
+        if (active) setBleEnv(env);
+      });
     };
-  }, []);
+    refreshAvailability();
+
+    const onAvailabilityChange = () => refreshAvailability();
+    nav?.bluetooth?.addEventListener?.('availabilitychanged', onAvailabilityChange);
+
+    return () => {
+      active = false;
+      nav?.bluetooth?.removeEventListener?.('availabilitychanged', onAvailabilityChange);
+      if (patientId && samplesBufferRef.current.length > 0) {
+        const trailing = samplesBufferRef.current.splice(0, samplesBufferRef.current.length);
+        void fetch('/api/v1/ingest', {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patientId,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+            samples: trailing,
+          }),
+        }).catch(() => {});
+      }
+      cleanupBleHandles();
+    };
+  }, [patientId]);
 
   async function copyText(key: string, text: string) {
     try {
@@ -223,8 +279,9 @@ export function WatchSyncHub({
     }
   }
 
-  async function flushBleSamples() {
-    if (!patientId || samplesBufferRef.current.length === 0) return;
+  async function flushBleSamples(silent = false) {
+    if (!patientId || samplesBufferRef.current.length === 0 || flushingBleRef.current) return;
+    flushingBleRef.current = true;
     const toSend = samplesBufferRef.current.splice(0, samplesBufferRef.current.length);
     setBufferedCount(0);
     setSyncingBle(true);
@@ -246,7 +303,11 @@ export function WatchSyncHub({
         setBleMessage(body.error ?? 'Failed to save BLE watch samples');
         return;
       }
-      setBleMessage(`Saved ${body.recordsAccepted ?? toSend.length} real watch reading(s) cleanly.`);
+      const saved = body.recordsAccepted ?? toSend.length;
+      setAutoSavedCount((prev) => prev + saved);
+      if (!silent) {
+        setBleMessage(`Saved ${saved} real watch reading(s) cleanly.`);
+      }
       onSyncComplete();
     } catch {
       samplesBufferRef.current.unshift(...toSend);
@@ -254,110 +315,195 @@ export function WatchSyncHub({
       setBleStatus('error');
       setBleMessage('Network error while uploading BLE watch readings.');
     } finally {
+      flushingBleRef.current = false;
       setSyncingBle(false);
     }
   }
 
-  async function connectBleWatch() {
-    if (!bleSupported || !patientId) return;
-    const bt = (navigator as unknown as { bluetooth: NavigatorBluetoothLike }).bluetooth;
+  async function connectBleWatch(overrideMode?: BleScanMode) {
+    if (!patientId) return;
+    const scanMode = overrideMode ?? bleScanMode;
+    if (overrideMode) setBleScanMode(overrideMode);
+
+    const nav =
+      typeof navigator !== 'undefined'
+        ? (navigator as unknown as { bluetooth?: NavigatorBluetoothLike })
+        : undefined;
+    const secure = typeof window !== 'undefined' ? window.isSecureContext : true;
+    const freshEnv = await checkBleAvailability(nav, secure);
+    setBleEnv(freshEnv);
+
+    if (!freshEnv.supported || !nav?.bluetooth) {
+      setBleStatus('error');
+      setBleMessage(freshEnv.reason ?? 'Web Bluetooth is unavailable in this browser.');
+      return;
+    }
+
+    if (!freshEnv.adapterAvailable) {
+      setBleStatus('error');
+      setBleMessage(
+        freshEnv.reason ??
+          'Bluetooth adapter is turned off. Enable Bluetooth in Settings and tap Pair again.',
+      );
+      return;
+    }
+
+    cleanupBleHandles();
     setBleStatus('connecting');
     setBleMessage(null);
+    setLiveSpo2(null);
 
     try {
-      const device = await bt.requestDevice({
-        filters: [{ services: ['heart_rate'] }],
-        optionalServices: ['battery_service'],
-      });
+      const device = await nav.bluetooth.requestDevice(buildRequestDeviceOptions(scanMode));
       deviceRef.current = device;
-      const label = device.name?.trim() || 'Bluetooth Heart Rate Watch';
-      setWatchName(label);
+      const initialLabel = device.name?.trim() || 'Bluetooth Watch';
+      setWatchName(initialLabel);
 
-      device.addEventListener('gattserverdisconnected', () => {
-        setBleStatus('idle');
-        setBleMessage(`${label} disconnected.`);
-      });
-
-      const server = await device.gatt?.connect();
-      if (!server) {
-        throw new Error('Watch does not expose a GATT server.');
-      }
-
-      try {
-        const batterySvc = await server.getPrimaryService('battery_service');
-        const batteryChar = await batterySvc.getCharacteristic('battery_level');
-        const batteryVal = await batteryChar.readValue();
-        setBatteryPct(batteryVal.getUint8(0));
-      } catch {
-        setBatteryPct(null);
-      }
-
-      const hrService = await server.getPrimaryService('heart_rate');
-      const hrChar = await hrService.getCharacteristic('heart_rate_measurement');
-      hrCharRef.current = hrChar;
-
-      const onPacket = (ev: { target: GattCharacteristicLike }) => {
-        const view = ev.target.value;
-        if (!view) return;
-        const reading = parseBleHeartRateMeasurement(view);
-        const recordedAt = new Date().toISOString();
-
-        setLiveBpm(reading.bpm);
-        setContactDetected(reading.contactDetected);
-
-        if (reading.rrIntervalsMs.length > 0) {
-          rrWindowRef.current = [...rrWindowRef.current, ...reading.rrIntervalsMs].slice(-30);
+      const onDisconnected = () => {
+        if (samplesBufferRef.current.length > 0) {
+          void flushBleSamples(true);
         }
-        const hrv = computeRmssdFromRrIntervals(rrWindowRef.current);
-        if (hrv !== null) setLiveHrv(hrv);
+        setBleStatus('idle');
+        setBleMessage((prev) =>
+          prev && prev.includes('proprietary') ? prev : `${initialLabel} disconnected.`,
+        );
+      };
+      disconnectListenerRef.current = onDisconnected;
+      device.addEventListener('gattserverdisconnected', onDisconnected);
 
-        samplesBufferRef.current.push({
-          metricType: 'heart_rate',
-          value: reading.bpm,
-          unit: 'bpm',
-          recordedAt,
-          context: 'rest',
-          source: 'open_ingest_api',
-          deviceModel: label,
-          isSynthetic: false,
-        });
-        if (hrv !== null && reading.rrIntervalsMs.length > 0) {
+      const server = await connectGattWithRetry(device, 2, 450);
+      const discovered = await discoverWatchServices(server, device.name);
+      const watchLabel = discovered.watchLabel;
+      setWatchName(watchLabel);
+      setBatteryPct(discovered.batteryPct);
+
+      if (!discovered.hrChar && !discovered.plxChar) {
+        cleanupBleHandles();
+        setBleStatus('error');
+        const batteryHint =
+          discovered.batteryPct !== null ? ` (Battery ${discovered.batteryPct}%)` : '';
+        const vendorHint = discovered.vendorDiagnosis
+          ? `Detected ${discovered.vendorDiagnosis} rather than open BLE Heart Rate (0x180D) or Pulse Oximeter (0x1822).`
+          : 'This watch did not expose open BLE Heart Rate (0x180D) or Pulse Oximeter (0x1822) GATT services.';
+        setBleMessage(
+          `Bluetooth connected to "${watchLabel}"${batteryHint} — ${vendorHint} Turn on "Heart Rate Broadcast" in your watch settings if supported (Garmin/Coros/Polar/Amazfit/Wear OS), or keep it paired with your phone app and sync via Android Health Connect / Google Fit above.`,
+        );
+        return;
+      }
+
+      const activeStreams: string[] = [];
+
+      if (discovered.hrChar) {
+        hrCharRef.current = discovered.hrChar;
+        const onHrPacket = (ev: { target: GattCharacteristicLike }) => {
+          const view = ev.target.value;
+          if (!view) return;
+          const reading = parseBleHeartRateMeasurement(view);
+          const recordedAt = nextMonotonicIso();
+
+          setLiveBpm(reading.bpm);
+          setContactDetected(reading.contactDetected);
+
+          if (reading.rrIntervalsMs.length > 0) {
+            rrWindowRef.current = [...rrWindowRef.current, ...reading.rrIntervalsMs].slice(-30);
+          }
+          const hrv = computeRmssdFromRrIntervals(rrWindowRef.current);
+          if (hrv !== null) setLiveHrv(hrv);
+
           samplesBufferRef.current.push({
-            metricType: 'hrv_rmssd',
-            value: hrv,
-            unit: 'ms',
+            metricType: 'heart_rate',
+            value: reading.bpm,
+            unit: 'bpm',
             recordedAt,
             context: 'rest',
             source: 'open_ingest_api',
-            deviceModel: label,
+            deviceModel: watchLabel,
             isSynthetic: false,
           });
-        }
-        setBufferedCount(samplesBufferRef.current.length);
-      };
+          if (hrv !== null && reading.rrIntervalsMs.length > 0) {
+            samplesBufferRef.current.push({
+              metricType: 'hrv_rmssd',
+              value: hrv,
+              unit: 'ms',
+              recordedAt,
+              context: 'rest',
+              source: 'open_ingest_api',
+              deviceModel: watchLabel,
+              isSynthetic: false,
+            });
+          }
+          setBufferedCount(samplesBufferRef.current.length);
+          if (samplesBufferRef.current.length >= 10) {
+            void flushBleSamples(true);
+          }
+        };
+        hrListenerRef.current = onHrPacket;
+        discovered.hrChar.addEventListener('characteristicvaluechanged', onHrPacket);
+        await discovered.hrChar.startNotifications();
+        activeStreams.push('Heart Rate (0x180D)');
+      }
 
-      listenerRef.current = onPacket;
-      hrChar.addEventListener('characteristicvaluechanged', onPacket);
-      await hrChar.startNotifications();
+      if (discovered.plxChar) {
+        plxCharRef.current = discovered.plxChar;
+        const onPlxPacket = (ev: { target: GattCharacteristicLike }) => {
+          const view = ev.target.value;
+          if (!view) return;
+          const reading = parseBlePulseOximeterMeasurement(view);
+          const recordedAt = nextMonotonicIso();
+
+          if (reading.spo2 !== null) {
+            setLiveSpo2(reading.spo2);
+            samplesBufferRef.current.push({
+              metricType: 'spo2',
+              value: reading.spo2,
+              unit: '%',
+              recordedAt,
+              context: 'rest',
+              source: 'open_ingest_api',
+              deviceModel: watchLabel,
+              isSynthetic: false,
+            });
+          }
+          if (reading.pulseRate !== null && !discovered.hrChar) {
+            setLiveBpm(reading.pulseRate);
+            samplesBufferRef.current.push({
+              metricType: 'heart_rate',
+              value: reading.pulseRate,
+              unit: 'bpm',
+              recordedAt,
+              context: 'rest',
+              source: 'open_ingest_api',
+              deviceModel: watchLabel,
+              isSynthetic: false,
+            });
+          }
+          setBufferedCount(samplesBufferRef.current.length);
+          if (samplesBufferRef.current.length >= 10) {
+            void flushBleSamples(true);
+          }
+        };
+        plxListenerRef.current = onPlxPacket;
+        discovered.plxChar.addEventListener('characteristicvaluechanged', onPlxPacket);
+        await discovered.plxChar.startNotifications();
+        activeStreams.push('SpO₂ (0x1822)');
+      }
+
       setBleStatus('connected');
-      setBleMessage(`Streaming real Heart Rate (0x180D) from ${label}.`);
-    } catch (err) {
-      setBleStatus('error');
       setBleMessage(
-        err instanceof Error
-          ? err.message
-          : 'Bluetooth pairing cancelled or watch is not broadcasting BLE Heart Rate.',
+        `Streaming live ${activeStreams.join(' + ')} from ${watchLabel}. Auto-saves every 10 readings.`,
       );
+    } catch (err) {
+      cleanupBleHandles();
+      setBleStatus('error');
+      setBleMessage(formatBleConnectionError(err, scanMode));
     }
   }
 
   function disconnectBleWatch() {
-    if (hrCharRef.current && listenerRef.current) {
-      hrCharRef.current.removeEventListener('characteristicvaluechanged', listenerRef.current);
+    if (samplesBufferRef.current.length > 0) {
+      void flushBleSamples(true);
     }
-    if (deviceRef.current?.gatt?.connected) {
-      deviceRef.current.gatt.disconnect();
-    }
+    cleanupBleHandles();
     setBleStatus('idle');
     setBleMessage('Disconnected from Bluetooth watch.');
   }
@@ -746,29 +892,69 @@ export function WatchSyncHub({
                 </span>
                 <div>
                   <h3 className="text-base font-semibold text-[var(--text-primary)]">
-                    Direct Bluetooth Watch (BLE 0x180D)
+                    Direct Bluetooth Watch (BLE 0x180D / 0x1822)
                   </h3>
                   <p className="text-xs text-[var(--text-muted)]">
-                    Garmin, Polar, Coros, Amazfit, Noise/boAt HR broadcast, Wear OS &amp; straps
+                    Garmin, Polar, Coros, Amazfit, Noise/boAt, Wear OS &amp; BLE straps/oximeters
                   </p>
                 </div>
               </div>
-              <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)]">
-                {bleStatus === 'connected'
-                  ? 'Live Stream'
-                  : bleSupported
-                    ? 'Browser Ready'
-                    : 'Unsupported Browser'}
+              <span
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  bleStatus === 'connected'
+                    ? 'border-[var(--status-stable)] bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
+                    : !bleEnv.supported || !bleEnv.adapterAvailable
+                      ? 'border-[var(--status-watch)] bg-[var(--status-watch-bg)] text-[var(--status-watch)]'
+                      : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
+                }`}
+              >
+                {bleStatus === 'connected' ? 'Live Stream' : bleEnv.badgeLabel}
               </span>
             </div>
 
-            {bleStatus === 'connected' || liveBpm !== null ? (
-              <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5">
+            {bleSupported && bleStatus !== 'connected' && (
+              <div
+                className="mt-3 flex flex-wrap gap-2"
+                role="group"
+                aria-label="Bluetooth scan mode"
+              >
+                {(
+                  [
+                    { id: 'all_devices', label: 'All Nearby Watches (Recommended)' },
+                    { id: 'health_services', label: 'HR / SpO₂ Broadcast Only (0x180D)' },
+                  ] as const
+                ).map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    aria-pressed={bleScanMode === mode.id}
+                    onClick={() => setBleScanMode(mode.id)}
+                    className={`min-h-9 rounded-full px-3 py-1 text-xs font-semibold cursor-pointer ${
+                      bleScanMode === mode.id
+                        ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
+                        : 'border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+                    }`}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {bleStatus === 'connected' || liveBpm !== null || liveSpo2 !== null ? (
+              <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5 sm:grid-cols-4">
                 <div>
                   <p className="text-xs font-semibold text-[var(--text-muted)]">Heart Rate</p>
                   <p className="mt-0.5 font-[family-name:var(--font-mono)] text-2xl font-bold text-[var(--text-primary)] tabular-nums">
                     {liveBpm !== null ? `${liveBpm}` : '--'}{' '}
                     <span className="text-xs font-normal text-[var(--text-muted)]">bpm</span>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-[var(--text-muted)]">SpO₂</p>
+                  <p className="mt-0.5 font-[family-name:var(--font-mono)] text-2xl font-bold text-[var(--text-primary)] tabular-nums">
+                    {liveSpo2 !== null ? `${liveSpo2}` : '--'}{' '}
+                    <span className="text-xs font-normal text-[var(--text-muted)]">%</span>
                   </p>
                 </div>
                 <div>
@@ -786,28 +972,64 @@ export function WatchSyncHub({
                   </p>
                   <p className="text-xs text-[var(--text-muted)] truncate">
                     {watchName ?? 'BLE Sensor'}
+                    {autoSavedCount > 0 ? ` · ${autoSavedCount} saved` : ''}
                   </p>
                 </div>
               </div>
             ) : (
-              <p className="mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5 text-xs text-[var(--text-muted)]">
-                {bleSupported
-                  ? 'Enable "Heart Rate Broadcast" on your watch, then pair directly from Chrome on Android or desktop. Real packets (BPM + RR-interval HRV) buffer below and upload with zero synthetic data.'
-                  : 'Web Bluetooth requires Chrome or Edge on Android/Desktop over localhost or HTTPS. Use Android Health Connect or Apple Watch on iOS above/right.'}
-              </p>
+              <div className="mt-4 space-y-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3.5 text-xs text-[var(--text-muted)]">
+                {bleEnv.supported && bleEnv.adapterAvailable ? (
+                  <>
+                    <p className="font-semibold text-[var(--text-primary)]">
+                      Watch not showing up in Chrome&apos;s list? Check these 3 things:
+                    </p>
+                    <ol className="list-decimal space-y-1 pl-4">
+                      <li>
+                        Use <strong>All Nearby Watches</strong> above (most smartwatches hide{' '}
+                        <code>0x180D</code> until connected).
+                      </li>
+                      <li>
+                        Keep the watch screen awake and{' '}
+                        <strong>disconnect it from your phone&apos;s Bluetooth / companion app</strong>{' '}
+                        if scanning from a laptop (BLE allows 1 active link at a time).
+                      </li>
+                      <li>
+                        If your watch (Noise, boAt, Fire-Boltt, Galaxy Watch, Apple Watch) uses
+                        proprietary Bluetooth rather than open <code>0x180D</code> HR Broadcast,
+                        pair via <strong>Android Health Connect</strong> or <strong>Google Fit</strong>{' '}
+                        above.
+                      </li>
+                    </ol>
+                  </>
+                ) : (
+                  <p>
+                    {bleEnv.reason ??
+                      'Web Bluetooth requires Chrome or Edge on Android/Desktop over HTTPS or localhost with Bluetooth enabled. Use Android Health Connect or Apple Watch above/right.'}
+                  </p>
+                )}
+              </div>
             )}
 
             {bleMessage && (
-              <p
+              <div
                 role="status"
-                className={`mt-3 rounded-lg px-3 py-2 text-xs font-medium ${
+                className={`mt-3 space-y-2 rounded-lg px-3 py-2 text-xs font-medium ${
                   bleStatus === 'error'
                     ? 'bg-[var(--status-urgent-bg)] text-[var(--status-urgent)]'
                     : 'bg-[var(--status-stable-bg)] text-[var(--status-stable)]'
                 }`}
               >
-                {bleMessage}
-              </p>
+                <p>{bleMessage}</p>
+                {bleStatus === 'error' && bleScanMode === 'health_services' && bleSupported && (
+                  <button
+                    type="button"
+                    onClick={() => void connectBleWatch('all_devices')}
+                    className="inline-flex min-h-8 items-center rounded-full border border-current px-3 py-1 text-xs font-semibold hover:opacity-80 cursor-pointer"
+                  >
+                    Switch to &quot;All Nearby Watches&quot; &amp; Retry
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -816,7 +1038,7 @@ export function WatchSyncHub({
               <>
                 <button
                   type="button"
-                  onClick={() => void flushBleSamples()}
+                  onClick={() => void flushBleSamples(false)}
                   disabled={syncingBle || bufferedCount === 0}
                   className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--brand-primary)] px-4 py-2 text-xs font-semibold text-[var(--brand-primary-fg)] disabled:opacity-50 cursor-pointer"
                 >
@@ -824,7 +1046,9 @@ export function WatchSyncHub({
                   <span>
                     {syncingBle
                       ? 'Saving...'
-                      : `Save ${bufferedCount} Real Reading(s) to SENTINEL`}
+                      : bufferedCount > 0
+                        ? `Save ${bufferedCount} Buffered Reading(s) Now`
+                        : 'Auto-Saving Live Readings'}
                   </span>
                 </button>
                 <button
@@ -844,7 +1068,11 @@ export function WatchSyncHub({
               >
                 <Bluetooth className="h-4 w-4" aria-hidden="true" />
                 <span>
-                  {bleStatus === 'connecting' ? 'Pairing Watch...' : 'Pair Bluetooth Watch'}
+                  {bleStatus === 'connecting'
+                    ? 'Scanning Nearby Watches...'
+                    : bleScanMode === 'all_devices'
+                      ? 'Scan & Pair Bluetooth Watch'
+                      : 'Pair HR Broadcast Watch (0x180D)'}
                 </span>
               </button>
             )}
